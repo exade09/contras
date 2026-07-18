@@ -229,10 +229,15 @@ export function createResilientSteamInventoryFetch(
       const body = await fallback.text();
       if (body.length > DEFAULT_MAX_RESPONSE_BYTES) return primary;
       const payload = JSON.parse(body) as unknown;
-      if (!isRecord(payload) || payload.success !== true || !isRecord(payload.result)) {
+      if (!isRecord(payload) || payload.success !== true) {
         return primary;
       }
-      const result = payload.result;
+      const result = isRecord(payload.result)
+        ? payload.result
+        : isRecord(payload.response)
+          ? payload.response
+          : null;
+      if (!result) return primary;
       if (!Array.isArray(result.assets) || !Array.isArray(result.descriptions)) {
         return primary;
       }
