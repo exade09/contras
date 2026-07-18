@@ -11,6 +11,7 @@ import {
   applyVerifiedSteamProfile,
   clearSteamNonceCookie,
   loadSteamProfile,
+  mutableRedirect,
   steamBrowserBinding,
   steamStatusRedirect,
   type SteamProfileSnapshot,
@@ -51,9 +52,8 @@ function redirectWithCookies(
   status: string,
   sessionCookie?: string,
 ) {
-  const response = Response.redirect(
+  const response = mutableRedirect(
     steamStatusRedirect(origin, returnTo, status),
-    302,
   );
   response.headers.set("cache-control", "private, no-store, max-age=0");
   response.headers.append("set-cookie", clearSteamNonceCookie(request));

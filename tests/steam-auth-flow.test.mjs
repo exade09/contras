@@ -3,10 +3,23 @@ import test from "node:test";
 
 import {
   applyVerifiedSteamProfile,
+  mutableRedirect,
   resolveSteamAuthAction,
   steamBrowserBinding,
   steamNonceCookie,
 } from "../lib/server/steam-auth-flow.ts";
+
+test("Steam redirects keep headers mutable for nonce and session cookies", () => {
+  const response = mutableRedirect("https://steamcommunity.com/openid/login");
+
+  response.headers.set("cache-control", "private, no-store, max-age=0");
+  response.headers.append("set-cookie", "steam_nonce=example; HttpOnly");
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("location"), "https://steamcommunity.com/openid/login");
+  assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
+  assert.match(response.headers.get("set-cookie") || "", /steam_nonce=example/);
+});
 
 function memoryStore(seed = {}) {
   const accounts = new Map(Object.entries(seed.accounts || {}));

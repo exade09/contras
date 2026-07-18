@@ -4,6 +4,7 @@ import { steamAuthStates } from "@/db/schema";
 import { getSessionUser, routeError, sha256 } from "@/lib/server/auth";
 import {
   createSteamAuthTokens,
+  mutableRedirect,
   STEAM_AUTH_TTL_SECONDS,
   steamNonceCookie,
 } from "@/lib/server/steam-auth-flow";
@@ -51,7 +52,7 @@ export async function GET(request: Request) {
       configuredUrl: runtimeEnv().NEXT_PUBLIC_APP_URL,
       state,
     });
-    const response = Response.redirect(redirect, 302);
+    const response = mutableRedirect(redirect);
     response.headers.set("cache-control", "private, no-store, max-age=0");
     response.headers.append("set-cookie", steamNonceCookie(request, browserNonce));
     return response;

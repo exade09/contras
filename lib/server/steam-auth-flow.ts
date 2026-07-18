@@ -3,6 +3,18 @@ export const STEAM_AUTH_TTL_SECONDS = 10 * 60;
 
 export type SteamAuthIntent = "login" | "link";
 
+/**
+ * `Response.redirect()` has immutable headers in Node's Fetch implementation.
+ * Steam redirects need to append nonce/session cookies, so construct a normal
+ * response whose redirect headers remain mutable.
+ */
+export function mutableRedirect(location: string | URL, status = 302) {
+  return new Response(null, {
+    status,
+    headers: { location: location.toString() },
+  });
+}
+
 export type SteamProfileSnapshot = {
   steamId64: string;
   displayName: string | null;
