@@ -135,6 +135,7 @@ code; every other secret stays server-side.
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `STEAM_API_KEY` | No | Reserved for optional server-side Steam profile enrichment such as display name and avatar. It is not required for OpenID verification or the public Community inventory endpoint. |
+| `STEAMAPIS_API_KEY` | No | Server-only SteamApis fallback used only when Steam Community returns HTTP 429 for a public inventory. Keep it secret; the official Steam endpoint remains primary. |
 
 ### Public catalog
 
@@ -188,8 +189,11 @@ The inventory loader reads the English CS2 inventory for app `730`, context `2`,
 joins assets to descriptions by `classid` and `instanceid`, follows Steam's
 `more_items` and `last_assetid` pagination within a safety bound, and treats
 Steam as authoritative for ownership, asset IDs, quantities, tradability, and
-marketability. CSGO-API metadata is enrichment only. A private or unavailable
-inventory must not prevent use of the public catalog.
+marketability. When Steam Community returns HTTP 429, an optional server-only
+`STEAMAPIS_API_KEY` can retry the same public inventory through SteamApis; the
+fallback response is validated against the same ownership schema. CSGO-API
+metadata is enrichment only. A private or unavailable inventory must not
+prevent use of the public catalog.
 
 Only a current `steam_links` row created through verified OpenID is accepted as
 proof of a connected identity. The legacy `users.steam_id` column is retained
@@ -350,7 +354,8 @@ Current external-verification status:
 
 - Steam OpenID start and the public/private inventory states are covered by tests;
   complete callback behavior still requires a real Steam account smoke test.
-- Optional Steam profile enrichment with a real `STEAM_API_KEY` has not been verified.
+- Public Steam profile enrichment has been verified against a real SteamID; the
+  API-key Web API branch remains covered by deterministic tests.
 - The documented public Skinport items response has been verified with live data.
 - The application has been deployed to Vercel and its production build verified.
 - Live D1 data has not been exported or imported into PostgreSQL.

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildSteamInventoryUrl,
+  createResilientSteamInventoryFetch,
   createSteamInventoryLoader,
   steamCdnImageUrl,
 } from "../lib/server/steam-inventory.ts";
@@ -22,6 +23,56 @@ test("inventory URL always targets CS2 context 2 in English", () => {
   assert.equal(url.searchParams.get("l"), "english");
   assert.equal(url.searchParams.get("count"), "2000");
   assert.equal(url.searchParams.get("start_assetid"), "42");
+});
+
+test("Steam 429 switches once to the server-only SteamApis inventory fallback", async () => {
+  const requested = [];
+  const fallbackFetch = createResilientSteamInventoryFetch("fallback-secret", async (input, init) => {
+    const url = new URL(input);
+    requested.push(url);
+    if (url.origin === "https://steamcommunity.com") {
+      return new Response("rate limited", { status: 429 });
+    }
+    assert.equal(url.origin, "https://api.steamapis.com");
+    assert.equal(url.pathname, `/v2/steam/users/${STEAM_ID}/inventory/730/2`);
+    assert.equal(new Headers(init?.headers).get("x-api-key"), "fallback-secret");
+    assert.equal(url.searchParams.has("key"), false);
+    return jsonResponse({
+      success: true,
+      result: {
+        assets: [{ appid: 730, contextid: "2", assetid: "101", classid: "201", instanceid: "0", amount: "1" }],
+        descriptions: [{
+          appid: 730, classid: "201", instanceid: "0", name: "Fallback item",
+          market_hash_name: "Fallback item", type: "Base Grade Container",
+          tradable: 1, marketable: 1,
+        }],
+      },
+    });
+  });
+  const loader = createSteamInventoryLoader({ fetchImpl: fallbackFetch, maxRetries: 2 });
+
+  const result = await loader.load(STEAM_ID);
+
+  assert.equal(result.state, "success");
+  assert.equal(result.items[0].assetId, "101");
+  assert.equal(result.items[0].name, "Fallback item");
+  assert.equal(requested.length, 2);
+});
+
+test("Steam 429 is not retried repeatedly from the same server IP", async () => {
+  let calls = 0;
+  const loader = createSteamInventoryLoader({
+    maxRetries: 5,
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response("rate limited", { status: 429 });
+    },
+  });
+
+  const result = await loader.load(STEAM_ID);
+
+  assert.equal(result.state, "rate_limited");
+  assert.equal(calls, 1);
 });
 
 test("multi-page assets merge with classid+instanceid descriptions and catalog metadata", async () => {

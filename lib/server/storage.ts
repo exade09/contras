@@ -15,6 +15,7 @@ export type RuntimeEnv = {
   NEXT_PUBLIC_APP_URL?: string;
   SESSION_SECRET?: string;
   STEAM_API_KEY?: string;
+  STEAMAPIS_API_KEY?: string;
 };
 
 export function runtimeEnv(): RuntimeEnv {
@@ -32,6 +33,7 @@ export function runtimeEnv(): RuntimeEnv {
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     SESSION_SECRET: process.env.SESSION_SECRET,
     STEAM_API_KEY: process.env.STEAM_API_KEY,
+    STEAMAPIS_API_KEY: process.env.STEAMAPIS_API_KEY,
   };
 }
 

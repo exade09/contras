@@ -4,6 +4,7 @@ export const STEAM_CS2_APP_ID = "730";
 export const STEAM_CS2_CONTEXT_ID = "2";
 export const STEAM_INVENTORY_LANGUAGE = "english";
 export const STEAM_INVENTORY_BASE_URL = "https://steamcommunity.com/inventory/";
+export const STEAMAPIS_INVENTORY_ORIGIN = "https://api.steamapis.com";
 
 const DEFAULT_PAGE_SIZE = 2_000;
 const DEFAULT_MAX_PAGES = 8;
@@ -184,6 +185,70 @@ type PageResult =
 
 type CoreResult = Omit<SteamInventoryResult, "cache">;
 type CachedResult = { expiresAt: number; result: CoreResult };
+
+export function createResilientSteamInventoryFetch(
+  apiKey: string | null | undefined,
+  fetchImpl: InventoryFetchLike = fetch,
+): InventoryFetchLike {
+  const fallbackKey = apiKey?.trim();
+  return async (input, init) => {
+    const primary = await fetchImpl(input, init);
+    if (primary.status !== 429 || !fallbackKey) return primary;
+
+    let steamId64: string | null = null;
+    try {
+      const primaryUrl = new URL(input instanceof Request ? input.url : input);
+      const match = primaryUrl.pathname.match(/^\/inventory\/(\d{17})\/730\/2$/);
+      if (primaryUrl.origin === "https://steamcommunity.com" && match) {
+        steamId64 = match[1];
+      }
+    } catch {
+      return primary;
+    }
+    if (!steamId64) return primary;
+
+    const fallbackUrl = new URL(
+      `/v2/steam/users/${steamId64}/inventory/${STEAM_CS2_APP_ID}/${STEAM_CS2_CONTEXT_ID}`,
+      STEAMAPIS_INVENTORY_ORIGIN,
+    );
+    try {
+      const fallback = await fetchImpl(fallbackUrl, {
+        headers: {
+          accept: "application/json",
+          "user-agent": "contras.fun read-only Steam inventory fallback",
+          "x-api-key": fallbackKey,
+        },
+        redirect: "error",
+        signal: init?.signal,
+      });
+      if (!fallback.ok) return primary;
+      const declaredLength = Number(fallback.headers.get("content-length"));
+      if (Number.isFinite(declaredLength) && declaredLength > DEFAULT_MAX_RESPONSE_BYTES) {
+        return primary;
+      }
+      const body = await fallback.text();
+      if (body.length > DEFAULT_MAX_RESPONSE_BYTES) return primary;
+      const payload = JSON.parse(body) as unknown;
+      if (!isRecord(payload) || payload.success !== true || !isRecord(payload.result)) {
+        return primary;
+      }
+      const result = payload.result;
+      if (!Array.isArray(result.assets) || !Array.isArray(result.descriptions)) {
+        return primary;
+      }
+      return Response.json({
+        ...result,
+        success: 1,
+        total_inventory_count: result.total_inventory_count ?? result.assets.length,
+        more_items: result.more_items ?? false,
+      }, {
+        headers: { "x-contras-inventory-source": "steamapis-fallback" },
+      });
+    } catch {
+      return primary;
+    }
+  };
+}
 
 export class SteamInventoryConfigurationError extends Error {
   constructor(message: string) {
@@ -676,11 +741,10 @@ export function createSteamInventoryLoader(
         }
         if (result.kind === "rate_limited") {
           lastRetryAfter = result.retryAfterSeconds;
-          if (attempt === maxRetries) return result;
-          const serverDelay = (result.retryAfterSeconds ?? 0) * 1_000;
-          const backoff = retryBaseMs * 2 ** attempt;
-          await sleep(Math.min(maxRetryDelayMs, Math.max(serverDelay, backoff)));
-          continue;
+          // Retrying a per-IP Steam 429 from the same function only extends the
+          // throttle and delays the response. A configured fallback fetch gets
+          // its chance before this branch is reached.
+          return result;
         }
         if (result.kind === "timeout") {
           if (attempt === maxRetries) return { kind: "timeout" };
