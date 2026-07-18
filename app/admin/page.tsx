@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type User = { id: string; login: string; display_name: string; role: string; status: string; steam_id: string | null; created_at: string; last_login_at: string | null; deal_count: number; deal_total: number; payment_method: "kaspi_card" | null; payment_recipient_name: string | null; payment_kaspi_phone: string | null; payment_card_last4: string | null; payment_has_card_number: boolean | null; payment_updated_by_role: "user" | "admin" | null; payment_updated_at: string | null };
 type Deal = { id: string; user_id: string; login: string; display_name: string; deal_date: string; amount_cents: number; currency: string; status: string; source: string; note: string; items: string | null; payment_method: "kaspi_card" | null; payment_details: string };
@@ -28,7 +28,8 @@ export default function AdminPage() {
   const [showUserForm, setShowUserForm] = useState(false); const [showDealForm, setShowDealForm] = useState(false);
   const [paymentUser, setPaymentUser] = useState<User | null>(null);
   const [paymentForm, setPaymentForm] = useState({ recipientName: "", kaspiPhone: "", cardNumber: "" });
-  const [revealedCardNumber, setRevealedCardNumber] = useState("");
+  const [paymentCardLoading, setPaymentCardLoading] = useState(false);
+  const paymentLoadSequence = useRef(0);
   const [userForm, setUserForm] = useState({ login: "", displayName: "", password: "", role: "user" });
   const [dealForm, setDealForm] = useState({ userId: "", dealDate: new Date().toISOString().slice(0,10), amount: "", currency: "USD", status: "completed", items: "", note: "", paymentMethod: "kaspi_card", paymentDetails: "" });
 
@@ -68,25 +69,24 @@ export default function AdminPage() {
   function paymentSummary(user: User) {
     return [user.payment_recipient_name, user.payment_kaspi_phone, user.payment_card_last4 ? `card ending ${user.payment_card_last4}` : ""].filter(Boolean).join(" · ");
   }
-  function editPaymentProfile(user: User) {
-    setError(""); setRevealedCardNumber(""); setPaymentUser(user); setPaymentForm({ recipientName: user.payment_recipient_name || "", kaspiPhone: user.payment_kaspi_phone || "", cardNumber: "" });
+  async function editPaymentProfile(user: User) {
+    const requestId = ++paymentLoadSequence.current;
+    setError(""); setPaymentUser(user); setPaymentForm({ recipientName: user.payment_recipient_name || "", kaspiPhone: user.payment_kaspi_phone || "", cardNumber: "" });
+    setPaymentCardLoading(Boolean(user.payment_has_card_number));
+    if (!user.payment_has_card_number) return;
+    const response = await fetch("/api/admin/payment-profile/reveal", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: user.id }) });
+    const body = await response.json().catch(() => ({}));
+    if (requestId !== paymentLoadSequence.current) return;
+    setPaymentCardLoading(false);
+    if (!response.ok) { setError(body.error || "Could not load the saved card number"); return; }
+    setPaymentForm((current) => ({ ...current, cardNumber: body.cardNumber || "" }));
   }
   async function savePaymentProfile(event: FormEvent) {
     event.preventDefault(); if (!paymentUser) return; setError("");
     const response = await fetch("/api/admin/payment-profile", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: paymentUser.id, ...paymentForm }) });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) { setError(body.error || "Could not save payout details"); return; }
-    setPaymentUser(null); setRevealedCardNumber(""); flash("Kaspi payout profile saved"); await load();
-  }
-  async function revealCardNumber() {
-    if (revealedCardNumber) { setRevealedCardNumber(""); return; }
-    if (!paymentUser || !confirm(`Reveal the full card number for @${paymentUser.login}? This access is audited.`)) return;
-    setError(""); setRevealedCardNumber("");
-    const response = await fetch("/api/admin/payment-profile/reveal", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: paymentUser.id }) });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) { setError(body.error || "Could not reveal card number"); return; }
-    setRevealedCardNumber(body.cardNumber || "");
-    window.setTimeout(() => setRevealedCardNumber((current) => current === body.cardNumber ? "" : current), 20_000);
+    paymentLoadSequence.current += 1; setPaymentUser(null); setPaymentCardLoading(false); flash("Kaspi payout profile saved"); await load();
   }
   async function removePaymentProfile() {
     if (!paymentUser || !confirm(`Remove saved payout details for @${paymentUser.login}? Existing request snapshots will remain unchanged.`)) return;
@@ -94,7 +94,7 @@ export default function AdminPage() {
     const response = await fetch("/api/admin/payment-profile", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: paymentUser.id }) });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) { setError(body.error || "Could not remove payout details"); return; }
-    setPaymentUser(null); flash("Kaspi payout profile removed"); await load();
+    paymentLoadSequence.current += 1; setPaymentUser(null); setPaymentCardLoading(false); flash("Kaspi payout profile removed"); await load();
   }
   function chooseDealUser(userId: string) {
     const selectedUser = users.find((user) => user.id === userId);
@@ -140,7 +140,18 @@ export default function AdminPage() {
     </section>
     {showUserForm && <div className="modalBackdrop"><form className="adminModal" onSubmit={createUser}><button className="modalClose" type="button" onClick={() => setShowUserForm(false)}>×</button><span>ACCESS MANAGEMENT</span><h2>Create user account</h2><p>Give these credentials directly to your client. The password will be stored as a secure hash.</p><label>Display name<input required value={userForm.displayName} onChange={(e) => setUserForm({...userForm, displayName:e.target.value})} placeholder="Client name" /></label><label>Login<input required value={userForm.login} onChange={(e) => setUserForm({...userForm, login:e.target.value})} placeholder="client.login" /></label><label>Temporary password<input required minLength={10} value={userForm.password} onChange={(e) => setUserForm({...userForm, password:e.target.value})} placeholder="At least 10 characters" /></label><label>Role<select value={userForm.role} onChange={(e) => setUserForm({...userForm, role:e.target.value})}><option value="user">Client</option><option value="admin">Administrator</option></select></label>{error && <div className="formError">{error}</div>}<button className="modalSubmit">Create access account <b>→</b></button></form></div>}
     {showDealForm && <div className="modalBackdrop"><form className="adminModal wideModal" onSubmit={createDeal}><button className="modalClose" type="button" onClick={() => setShowDealForm(false)}>×</button><span>MANUAL HISTORY</span><h2>Add completed deal</h2><p>The deal will immediately appear in the selected client&apos;s history.</p><div className="formGrid"><label>Client<select required value={dealForm.userId} onChange={(e) => chooseDealUser(e.target.value)}><option value="">Select user</option>{users.map((user) => <option key={user.id} value={user.id}>{user.display_name} (@{user.login})</option>)}</select></label><label>Deal date<input required type="date" value={dealForm.dealDate} onChange={(e) => setDealForm({...dealForm,dealDate:e.target.value})} /></label><label>Amount<input required min="0" step="0.01" type="number" value={dealForm.amount} onChange={(e) => setDealForm({...dealForm,amount:e.target.value})} placeholder="0.00" /></label><label>Currency<select value={dealForm.currency} onChange={(e) => setDealForm({...dealForm,currency:e.target.value})}><option>USD</option><option>EUR</option><option>RUB</option></select></label></div><label>Items — one per line<textarea value={dealForm.items} onChange={(e) => setDealForm({...dealForm,items:e.target.value})} placeholder={"AK-47 | Redline (Field-Tested)\nAWP | Asiimov (Battle-Scarred)"} /></label><div className="formGrid"><label>Payment method<select value={dealForm.paymentMethod} onChange={(e) => setDealForm({...dealForm,paymentMethod:e.target.value})}><option value="kaspi_card">Card · Kaspi Bank</option><option value="">Not specified</option></select></label><label>Payout reference<input maxLength={240} value={dealForm.paymentDetails} onChange={(e) => setDealForm({...dealForm,paymentDetails:e.target.value})} placeholder="Recipient, Kaspi phone, or last 4 digits" /></label></div><p className="paymentSafetyHint">A saved user payout profile is filled automatically. Never enter a full card number, CVV, PIN, or expiry date.</p><label>Internal note<textarea className="shortArea" value={dealForm.note} onChange={(e) => setDealForm({...dealForm,note:e.target.value})} placeholder="Optional note about the transaction" /></label>{error && <div className="formError">{error}</div>}<button className="modalSubmit">Add to client history <b>→</b></button></form></div>}
-    {paymentUser && <div className="modalBackdrop"><form className="adminModal" onSubmit={savePaymentProfile}><button className="modalClose" type="button" onClick={() => { setPaymentUser(null); setRevealedCardNumber(""); setError(""); }}>×</button><span>PAYOUT PROFILE</span><h2>Kaspi details for {paymentUser.display_name}</h2><p>The user can also update these fields from Profile. Existing request snapshots are not changed.</p>{paymentUser.payment_has_card_number && <div className="encryptedCardSummary adminCardSummary"><span>SAVED CARD</span><strong>{revealedCardNumber || `•••• ${paymentUser.payment_card_last4}`}</strong><small>{revealedCardNumber ? "Automatically hidden after 20 seconds" : "Encrypted at rest and masked by default"}</small><button type="button" onClick={revealCardNumber}>{revealedCardNumber ? "Hide now" : "Reveal for 20s"}</button></div>}<label>Recipient name<input required maxLength={80} autoComplete="off" value={paymentForm.recipientName} onChange={(event) => setPaymentForm({ ...paymentForm, recipientName: event.target.value })} placeholder="Recipient name" /></label><label>Kaspi phone<input inputMode="tel" maxLength={24} autoComplete="off" value={paymentForm.kaspiPhone} onChange={(event) => setPaymentForm({ ...paymentForm, kaspiPhone: event.target.value })} placeholder="+7 700 000 00 00" /></label><label>Card number<input type="password" inputMode="numeric" minLength={13} maxLength={23} autoComplete="off" value={paymentForm.cardNumber} onChange={(event) => setPaymentForm({ ...paymentForm, cardNumber: event.target.value.replace(/[^0-9 -]/g, "") })} placeholder={paymentUser.payment_has_card_number ? "Leave blank to keep saved card" : "0000 0000 0000 0000"} /></label><p className="paymentSafetyHint">The number is encrypted and write-only after saving. Never enter a CVV, PIN, or expiry date.</p>{error && <div className="formError">{error}</div>}<button className="modalSubmit">Save payout profile <b>→</b></button>{paymentUser.payment_method && <button className="removePaymentProfileButton" type="button" onClick={removePaymentProfile}>Remove saved payout details</button>}</form></div>}
+    {paymentUser && <div className="modalBackdrop"><form className="adminModal" onSubmit={savePaymentProfile}>
+      <button className="modalClose" type="button" onClick={() => { paymentLoadSequence.current += 1; setPaymentUser(null); setPaymentCardLoading(false); setError(""); }}>×</button>
+      <span>PAYOUT PROFILE</span>
+      <h2>Kaspi details for {paymentUser.display_name}</h2>
+      <p>The user can also update these fields from Profile. Existing request snapshots are not changed.</p>
+      <label>Recipient name<input required maxLength={80} autoComplete="off" value={paymentForm.recipientName} onChange={(event) => setPaymentForm({ ...paymentForm, recipientName: event.target.value })} placeholder="Recipient name" /></label>
+      <label>Kaspi phone<input inputMode="tel" maxLength={24} autoComplete="off" value={paymentForm.kaspiPhone} onChange={(event) => setPaymentForm({ ...paymentForm, kaspiPhone: event.target.value })} placeholder="+7 700 000 00 00" /></label>
+      <label>Card number<input type="text" inputMode="numeric" minLength={13} maxLength={23} autoComplete="off" disabled={paymentCardLoading} value={paymentForm.cardNumber} onChange={(event) => setPaymentForm({ ...paymentForm, cardNumber: event.target.value.replace(/[^0-9 -]/g, "") })} placeholder={paymentCardLoading ? "Loading saved card…" : "0000 0000 0000 0000"} /></label>
+      {error && <div className="formError">{error}</div>}
+      <button className="modalSubmit" disabled={paymentCardLoading}>{paymentCardLoading ? "Loading card…" : "Save payout profile"} <b>→</b></button>
+      {paymentUser.payment_method && <button className="removePaymentProfileButton" type="button" onClick={removePaymentProfile}>Remove saved payout details</button>}
+    </form></div>}
   </main>;
 }
 

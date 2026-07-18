@@ -8,6 +8,7 @@ import { cleanText, jsonError, runtimeEnv, sameOrigin } from "@/lib/server/stora
 export const runtime = "nodejs";
 
 const PRIVATE_NO_STORE = { "cache-control": "private, no-store, max-age=0" };
+const ADMIN_CARD_REVEALS_PER_MINUTE = 30;
 
 export async function POST(request: Request) {
   try {
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
         eq(paymentProfileAccessEvents.action, "reveal"),
         gt(paymentProfileAccessEvents.createdAt, threshold),
       ));
-    if ((recentRows[0]?.total || 0) >= 5) {
+    if ((recentRows[0]?.total || 0) >= ADMIN_CARD_REVEALS_PER_MINUTE) {
       return jsonError("Too many card reveal requests. Try again in one minute.", 429);
     }
 

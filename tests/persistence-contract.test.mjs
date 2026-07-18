@@ -74,3 +74,12 @@ test("full card numbers use encrypted storage and audited reveal access", async 
   assert.match(revealRoute, /paymentProfileAccessEvents/);
   assert.match(revealRoute, /"cache-control": "private, no-store, max-age=0"/);
 });
+
+test("administrator payout editor loads the complete saved card into its editable field", async () => {
+  const adminPage = await readFile("app/admin/page.tsx", "utf8");
+  assert.match(adminPage, /fetch\("\/api\/admin\/payment-profile\/reveal"/);
+  assert.match(adminPage, /cardNumber: body\.cardNumber \|\| ""/);
+  assert.match(adminPage, /Card number<input type="text"/);
+  assert.doesNotMatch(adminPage, /Automatically hidden after 20 seconds/);
+  assert.doesNotMatch(adminPage, /The number is encrypted and write-only after saving/);
+});
