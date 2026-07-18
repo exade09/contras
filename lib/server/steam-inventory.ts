@@ -221,6 +221,20 @@ function fallbackIssue(response: Response) {
     : undefined;
 }
 
+function providerEnvelopeIssue(payload: Record<string, unknown>) {
+  if (payload.success !== false || !isRecord(payload.error)) return "invalid_response";
+  const message = typeof payload.error.message === "string"
+    ? payload.error.message.toLocaleUpperCase("en-US")
+    : "";
+  if (/MISSING_API_KEY|INVALID_API_KEY|ACCESS_DENIED/.test(message)) {
+    return "key_rejected";
+  }
+  if (/INSUFFICIENT_BALANCE|QUOTA|SUBSCRIPTION|PAYMENT/.test(message)) {
+    return "account_or_quota";
+  }
+  return "invalid_response";
+}
+
 export function createResilientSteamInventoryFetch(
   apiKey: string | null | undefined,
   fetchImpl: InventoryFetchLike = fetch,
@@ -276,8 +290,11 @@ export function createResilientSteamInventoryFetch(
         return fallbackIssueResponse(primary, "invalid_response");
       }
       const payload = JSON.parse(body) as unknown;
-      if (!isRecord(payload) || payload.success !== true) {
+      if (!isRecord(payload)) {
         return fallbackIssueResponse(primary, "invalid_response");
+      }
+      if (payload.success !== true) {
+        return fallbackIssueResponse(primary, providerEnvelopeIssue(payload));
       }
       const result = isRecord(payload.result)
         ? payload.result
@@ -373,10 +390,17 @@ function inventoryError(
           retryable: true,
         };
       }
-      if (fallback === "provider_unavailable" || fallback === "invalid_response") {
+      if (fallback === "provider_unavailable") {
         return {
           code,
-          message: "Steam is rate-limited and the SteamApis fallback returned no usable inventory.",
+          message: "Steam is rate-limited and the SteamApis fallback did not respond before the request timeout.",
+          retryable: true,
+        };
+      }
+      if (fallback === "invalid_response") {
+        return {
+          code,
+          message: "SteamApis returned an unexpected inventory response. Check that API v2 inventory access is enabled.",
           retryable: true,
         };
       }

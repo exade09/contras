@@ -9,9 +9,11 @@ import { loadSkinCatalog } from "@/lib/server/skins";
 import { runtimeEnv } from "@/lib/server/storage";
 
 export const runtime = "nodejs";
+export const maxDuration = 45;
 
 const inventoryLoader = createSteamInventoryLoader({
   fetchImpl: createResilientSteamInventoryFetch(runtimeEnv().STEAMAPIS_API_KEY),
+  timeoutMs: 30_000,
 });
 
 function inventoryJson(body: unknown, init?: ResponseInit) {

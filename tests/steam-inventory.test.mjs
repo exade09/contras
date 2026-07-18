@@ -99,6 +99,22 @@ test("inventory fallback reports missing and rejected server configuration safel
     assert.equal(result.fallbackIssue, "key_rejected");
     assert.match(result.error?.message || "", /rejected STEAMAPIS_API_KEY/);
   });
+
+  await t.test("provider reports quota in a successful HTTP envelope", async () => {
+    const loader = createSteamInventoryLoader({
+      maxRetries: 0,
+      fetchImpl: createResilientSteamInventoryFetch("configured-key", async (input) =>
+        new URL(input).origin === "https://steamcommunity.com"
+          ? new Response("rate limited", { status: 429 })
+          : jsonResponse({
+              success: false,
+              error: { name: "BadRequestError", message: "INSUFFICIENT_BALANCE" },
+            })),
+    });
+    const result = await loader.load(STEAM_ID);
+    assert.equal(result.fallbackIssue, "account_or_quota");
+    assert.match(result.error?.message || "", /no available request quota/);
+  });
 });
 
 test("multi-page assets merge with classid+instanceid descriptions and catalog metadata", async () => {
