@@ -1,0 +1,65 @@
+{
+  "all": {
+    "agent-4613": {
+      "id": "agent-4613",
+      "name": "Bloody Darryl The Strapped | The Professionals",
+      "market_hash_name": "Bloody Darryl The Strapped | The Professionals",
+      "rarity": { "id": "rarity_legendary_character", "name": "Superior", "color": "#d32ce6" },
+      "collections": [{ "id": "collection-set-op11-characters", "name": "Operation Riptide Agents" }],
+      "image": "https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/main/static/panorama/images/econ/characters/customplayer_tm_professional_varf5_png.png"
+    },
+    "sticker-75": {
+      "id": "sticker-75",
+      "name": "Sticker | Titan | Katowice 2014",
+      "market_hash_name": "Sticker | Titan | Katowice 2014",
+      "type": "Team",
+      "rarity": { "id": "rarity_rare", "name": "High Grade", "color": "#4b69ff" },
+      "image": "https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/main/static/panorama/images/econ/stickers/emskatowice2014/titan_png.png"
+    },
+    "crate-4904": {
+      "id": "crate-4904",
+      "name": "Kilowatt Case",
+      "market_hash_name": "Kilowatt Case",
+      "type": "Case",
+      "image": "https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/main/static/panorama/images/econ/weapon_cases/crate_community_33_png.png"
+    },
+    "keychain-1": {
+      "id": "keychain-1",
+      "name": "Charm | Lil' Ava",
+      "market_hash_name": "Charm | Lil' Ava",
+      "rarity": { "id": "rarity_rare", "name": "High Grade", "color": "#4b69ff" },
+      "collections": [{ "id": "collection-set-kc-missinglink", "name": "Missing Link Charm Collection" }],
+      "image": "https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/main/static/panorama/images/econ/keychains/missinglink/kc_missinglink_ava_png.png"
+    },
+    "music_kit-39": {
+      "id": "music_kit-39",
+      "name": "Music Kit | The Verkkars, EZ4ENCE",
+      "market_hash_name": "Music Kit | The Verkkars, EZ4ENCE",
+      "rarity": { "id": "rarity_rare", "name": "High Grade", "color": "#4b69ff" },
+      "image": "https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/main/static/panorama/images/econ/music_kits/theverkkars_01_png.png"
+    },
+    "collectible-874": {
+      "id": "collectible-874",
+      "name": "5 Year Veteran Coin",
+      "market_hash_name": null,
+      "rarity": { "id": "rarity_ancient", "name": "Extraordinary", "color": "#eb4b4b" },
+      "image": "https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/main/static/panorama/images/econ/status_icons/5yearcoin_png.png"
+    }
+  },
+  "skins": [
+    {
+      "id": "skin-65604_0",
+      "name": "Desert Eagle | Urban DDPAT",
+      "market_hash_name": "Desert Eagle | Urban DDPAT (Factory New)",
+      "weapon": { "id": "weapon_deagle", "name": "Desert Eagle" },
+      "category": { "id": "csgo_inventory_weapon_category_pistols", "name": "Pistols" },
+      "wear": { "id": "SFUI_InvTooltip_Wear_Amount_0", "name": "Factory New" },
+      "rarity": { "id": "rarity_uncommon_weapon", "name": "Industrial Grade", "color": "#5e98d9" },
+      "stattrak": false,
+      "souvenir": false,
+      "paint_index": "17",
+      "collections": [{ "id": "collection-set-overpass", "name": "The Overpass Collection" }],
+      "image": "https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/main/static/panorama/images/econ/default_generated/weapon_deagle_hy_ddpat_urb_light_png.png"
+    }
+  ]
+}
