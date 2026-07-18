@@ -139,6 +139,38 @@ const MACHINE_GUNS = new Set(["M249", "Negev"]);
 const SNIPER_RIFLES = new Set(["AWP", "G3SG1", "SCAR-20", "SSG 08"]);
 const RIFLES = new Set(["AK-47", "AUG", "FAMAS", "Galil AR", "M4A1-S", "M4A4", "SG 553"]);
 
+/** Canonical rarity labels visible in CS2 across weapons, stickers, agents, and other items. */
+export const GAME_RARITIES = [
+  "Base Grade",
+  "Consumer Grade",
+  "Industrial Grade",
+  "Mil-Spec Grade",
+  "Restricted",
+  "Classified",
+  "Covert",
+  "Contraband",
+  "High Grade",
+  "Remarkable",
+  "Exotic",
+  "Extraordinary",
+  "Distinguished",
+  "Exceptional",
+  "Superior",
+  "Master",
+] as const;
+
+const GAME_RARITY_SET = new Set<string>(GAME_RARITIES);
+const RARITY_ALIASES = new Map([
+  ["Default", "Base Grade"],
+  ["Highlight Base Grade", "Base Grade"],
+]);
+
+export function canonicalGameRarity(value: unknown) {
+  const rarity = textValue(value);
+  const canonical = RARITY_ALIASES.get(rarity) || rarity;
+  return GAME_RARITY_SET.has(canonical) ? canonical : "Base Grade";
+}
+
 function asRecord(value: unknown): UnknownRecord | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as UnknownRecord
@@ -302,7 +334,7 @@ function normalizeCatalogEntry(
     weaponCategory,
     itemType,
     type: textValue(raw.type) || itemType,
-    rarity: textValue(rarity?.name) || "Unknown",
+    rarity: canonicalGameRarity(rarity?.name),
     rarityId: optionalText(rarity?.id),
     rarityColor: /^[0-9a-f]{6}$/i.test(rarityColor) ? rarityColor : "b0c3d9",
     wear,
@@ -555,7 +587,7 @@ export function buildCatalogFacets(items: CatalogSkin[]): CatalogFacets {
       ? [item.weaponCategory, item.category]
       : [])),
     weapons: uniqueSorted(items.map((item) => item.weapon)),
-    rarities: uniqueSorted(items.map((item) => item.rarity)),
+    rarities: GAME_RARITIES.filter((rarity) => items.some((item) => item.rarity === rarity)),
     wears: uniqueSorted(items.flatMap((item) => item.wears)),
     collections: uniqueSorted(items.flatMap((item) => item.collections)),
   };
@@ -612,7 +644,9 @@ export function queryCatalog<T extends CatalogSkin>(items: T[], query: CatalogQu
       sorted.sort((left, right) => left.name.localeCompare(right.name, "en"));
       break;
     case "rarity":
-      sorted.sort((left, right) => left.rarity.localeCompare(right.rarity, "en") || left.name.localeCompare(right.name, "en"));
+      sorted.sort((left, right) => GAME_RARITIES.indexOf(left.rarity as typeof GAME_RARITIES[number])
+        - GAME_RARITIES.indexOf(right.rarity as typeof GAME_RARITIES[number])
+        || left.name.localeCompare(right.name, "en"));
       break;
     case "price_asc":
       sorted.sort((left, right) => comparePrices(left, right, 1));

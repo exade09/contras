@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   applyVerifiedSteamProfile,
+  loadSteamProfile,
   mutableRedirect,
   resolveSteamAuthAction,
   steamBrowserBinding,
@@ -19,6 +20,26 @@ test("Steam redirects keep headers mutable for nonce and session cookies", () =>
   assert.equal(response.headers.get("location"), "https://steamcommunity.com/openid/login");
   assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
   assert.match(response.headers.get("set-cookie") || "", /steam_nonce=example/);
+});
+
+test("official Steam profile enrichment returns the nickname and trusted avatar", async () => {
+  const steamId64 = "76561198000000000";
+  const profile = await loadSteamProfile(steamId64, {
+    apiKey: "test-key",
+    fetchImpl: async (input) => {
+      const url = new URL(input);
+      assert.equal(url.origin, "https://api.steampowered.com");
+      assert.equal(url.searchParams.get("steamids"), steamId64);
+      return Response.json({ response: { players: [{
+        steamid: steamId64,
+        personaname: "Inventory Owner",
+        avatarfull: "https://avatars.steamstatic.com/0123456789abcdef0123456789abcdef01234567_full.jpg",
+      }] } });
+    },
+  });
+
+  assert.equal(profile.displayName, "Inventory Owner");
+  assert.equal(profile.avatarUrl, "https://avatars.steamstatic.com/0123456789abcdef0123456789abcdef01234567_full.jpg");
 });
 
 function memoryStore(seed = {}) {

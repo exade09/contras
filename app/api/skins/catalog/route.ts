@@ -69,6 +69,9 @@ export async function GET(request: Request) {
       .filter((value): value is string => Boolean(value));
     const priceBatch = await loadCatalogPrices(marketHashNames, currency);
     const pricedItems = attachCatalogPrices(snapshot.items, priceBatch);
+    const requestedOnlyWithPrices = ["1", "true", "yes"].includes(
+      (url.searchParams.get("onlyWithPrices") || "").toLocaleLowerCase("en-US"),
+    );
     const filters = {
       query,
       itemType: optionalFilter(url, "itemType", "type"),
@@ -80,7 +83,11 @@ export async function GET(request: Request) {
       page,
       pageSize,
       offset,
-      onlyWithPrices: ["1", "true", "yes"].includes((url.searchParams.get("onlyWithPrices") || "").toLocaleLowerCase("en-US")),
+      // Keep the public catalog usable during a provider outage even when the
+      // normal view is restricted to market-priced variants.
+      onlyWithPrices: requestedOnlyWithPrices &&
+        priceBatch.status !== "unavailable" &&
+        priceBatch.status !== "temporarily_unavailable",
       minPriceMinor: optionalMinorUnits(url, "minPrice", currency),
       maxPriceMinor: optionalMinorUnits(url, "maxPrice", currency),
     };

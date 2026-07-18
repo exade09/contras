@@ -32,7 +32,7 @@ export function catalogSearchParams(filters: CatalogFilterState, pageSize = 36) 
   (["q", "itemType", "weaponCategory", "weapon", "rarity", "wear"] as const).forEach((key) => {
     if (filters[key]) params.set(key, filters[key]);
   });
-  if (filters.onlyWithPrices) params.set("onlyWithPrices", "true");
+  params.set("onlyWithPrices", String(filters.onlyWithPrices));
   return params;
 }
 
@@ -46,7 +46,7 @@ export type CatalogPriceViewInput = {
 
 export type CatalogPricePresentation = {
   amountLabel: string;
-  sourceLabel: "CS.MONEY price";
+  sourceLabel: "Skinport market price";
   updatedLabel: string | null;
   available: boolean;
   stale: boolean;
@@ -59,23 +59,23 @@ export function catalogPricingNotice(
   if (status === "available") return null;
   if (status === "partial") {
     return {
-      title: "Some CS.MONEY prices are unavailable.",
-      detail: "Available prices remain labeled; unpriced catalog items stay visible.",
+      title: "Some Skinport prices are unavailable.",
+      detail: "Exact market variants with prices remain labeled; unpriced catalog items stay visible.",
     };
   }
   if (status === "temporarily_unavailable") {
     return {
-      title: "CS.MONEY pricing is temporarily unavailable.",
+      title: "Skinport pricing is temporarily unavailable.",
       detail: "Catalog metadata remains available. No price is estimated or substituted.",
     };
   }
   return configured
     ? {
-        title: "CS.MONEY pricing is unavailable.",
-        detail: "The authorized API contract must be completed before live prices can be shown.",
+        title: "Skinport pricing is unavailable.",
+        detail: "Catalog metadata remains available while the public price feed recovers.",
       }
     : {
-        title: "CS.MONEY pricing is not configured.",
+        title: "Skinport pricing is unavailable.",
         detail: "Catalog metadata remains available. No price is estimated or substituted.",
       };
 }
@@ -101,7 +101,7 @@ export function catalogPricePresentation(
       amountLabel: price.status === "temporarily_unavailable"
         ? "Price temporarily unavailable"
         : "Price unavailable",
-      sourceLabel: "CS.MONEY price",
+      sourceLabel: "Skinport market price",
       updatedLabel: null,
       available: false,
       stale: false,
@@ -124,7 +124,7 @@ export function catalogPricePresentation(
   const stale = price.stale || price.status === "stale";
   return {
     amountLabel: formatCurrencyMinorUnits(price.amountMinor!, price.currency!),
-    sourceLabel: "CS.MONEY price",
+    sourceLabel: "Skinport market price",
     updatedLabel: updatedLabel ? `${updatedLabel}${stale ? " · Stale" : ""}` : stale ? "Stale" : null,
     available: true,
     stale,

@@ -30,20 +30,20 @@ test("page changes preserve active catalog filters in URL parameters", () => {
   assert.equal(params.get("page"), "5");
 });
 
-test("catalog price presentation renders current, stale, missing, and temporary CS.MONEY states", () => {
+test("catalog price presentation renders current, stale, missing, and temporary Skinport states", () => {
   const now = Date.parse("2026-07-18T12:10:00Z");
   assert.deepEqual(catalogPricePresentation({
     status: "available", amountMinor: 12_450, currency: "USD",
     updatedAt: "2026-07-18T12:05:00Z", stale: false,
   }, now), {
-    amountLabel: "$124.50", sourceLabel: "CS.MONEY price",
+    amountLabel: "$124.50", sourceLabel: "Skinport market price",
     updatedLabel: "Updated 5 minutes ago", available: true, stale: false,
   });
   assert.deepEqual(catalogPricePresentation({
     status: "stale", amountMinor: 8_920, currency: "EUR",
     updatedAt: "2026-07-17T12:10:00Z", stale: true,
   }, now), {
-    amountLabel: "€89.20", sourceLabel: "CS.MONEY price",
+    amountLabel: "€89.20", sourceLabel: "Skinport market price",
     updatedLabel: "Updated 1 day ago · Stale", available: true, stale: true,
   });
   assert.equal(catalogPricePresentation({
@@ -54,10 +54,10 @@ test("catalog price presentation renders current, stale, missing, and temporary 
   }, now).amountLabel, "Price temporarily unavailable");
 });
 
-test("catalog pricing notices distinguish partial, temporary, unconfigured, and contract-blocked states", () => {
+test("catalog pricing notices distinguish partial, temporary, and unavailable Skinport states", () => {
   assert.equal(catalogPricingNotice("available", true), null);
-  assert.match(catalogPricingNotice("partial", true).title, /Some CS\.MONEY prices/);
+  assert.match(catalogPricingNotice("partial", true).title, /Some Skinport prices/);
   assert.match(catalogPricingNotice("temporarily_unavailable", true).title, /temporarily unavailable/);
-  assert.match(catalogPricingNotice("unavailable", false).title, /not configured/);
-  assert.match(catalogPricingNotice("unavailable", true).detail, /authorized API contract/);
+  assert.match(catalogPricingNotice("unavailable", false).title, /Skinport pricing is unavailable/);
+  assert.match(catalogPricingNotice("unavailable", true).detail, /public price feed/);
 });

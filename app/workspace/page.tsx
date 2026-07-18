@@ -38,7 +38,7 @@ type CatalogPrice = {
   status: "available" | "stale" | "unavailable" | "temporarily_unavailable";
   amountMinor: number | null;
   currency: string | null;
-  source: "CS.MONEY";
+  source: "Skinport";
   updatedAt: string | null;
   stale: boolean;
 };
@@ -69,31 +69,31 @@ type CatalogResponse = {
   pagination: { page: number; pageSize: number; totalPages: number; total: number; rangeStart: number; rangeEnd: number; hasPrevious: boolean; hasNext: boolean };
   facets: { itemTypes: FacetValue[]; weaponCategories: FacetValue[]; weapons: FacetValue[]; rarities: FacetValue[]; wears: FacetValue[]; collections: FacetValue[] };
   catalog: { source: "upstream" | "last-known-good" | "bundled-fallback"; fetchedAt: string; stale: boolean; errorCode?: string };
-  pricing: { source: "CS.MONEY"; status: "available" | "partial" | "unavailable" | "temporarily_unavailable"; currency: string | null; updatedAt: string | null; cache: "hit" | "miss" | "stale"; configured: boolean };
+  pricing: { source: "Skinport"; status: "available" | "partial" | "unavailable" | "temporarily_unavailable"; currency: string | null; updatedAt: string | null; cache: "hit" | "miss" | "stale"; configured: boolean };
 };
 type Deal = { id: string; deal_date: string; amount_cents: number; currency: string; status: string; source: string; note: string; items: string | null; item_count: number };
 type RequestItem = { id: string; asset_id: string; name: string; quantity: number; icon_url: string | null; rarity?: string | null; wear?: string | null };
 type TradeRequest = { id: string; steam_id: string; amount_cents: number; currency: string; status: string; note: string; created_at: string; updated_at: string; items: RequestItem[] };
 type CatalogFilters = { q: string; itemType: string; weaponCategory: string; weapon: string; rarity: string; wear: string; sort: string; onlyWithPrices: boolean; page: number };
 
-const DEFAULT_FILTERS: CatalogFilters = { q: "", itemType: "", weaponCategory: "", weapon: "", rarity: "", wear: "", sort: "default", onlyWithPrices: false, page: 1 };
+const DEFAULT_FILTERS: CatalogFilters = { q: "", itemType: "", weaponCategory: "", weapon: "", rarity: "", wear: "", sort: "default", onlyWithPrices: true, page: 1 };
 const EMPTY_CATALOG: CatalogResponse = {
   items: [], total: 0,
   pagination: { page: 1, pageSize: 36, totalPages: 0, total: 0, rangeStart: 0, rangeEnd: 0, hasPrevious: false, hasNext: false },
   facets: { itemTypes: [], weaponCategories: [], weapons: [], rarities: [], wears: [], collections: [] },
   catalog: { source: "bundled-fallback", fetchedAt: "", stale: false },
-  pricing: { source: "CS.MONEY", status: "unavailable", currency: null, updatedAt: null, cache: "miss", configured: false },
+  pricing: { source: "Skinport", status: "unavailable", currency: null, updatedAt: null, cache: "miss", configured: true },
 };
 
 function Brand() { return <a className="appBrand" href="/workspace"><span className="brandGlyph">◈</span><b>contras<span>.fun</span></b></a>; }
 function facetValue(value: FacetValue) { return typeof value === "string" ? value : value.value; }
 
-function SafeImage({ source, fallback, alt }: { source: string | null; fallback?: string | null; alt: string }) {
+function SafeImage({ source, fallback, alt, className }: { source: string | null; fallback?: string | null; alt: string; className?: string }) {
   const [current, setCurrent] = useState(source);
-  if (!current) return <span aria-label={`${alt} image unavailable`}>CS2</span>;
+  if (!current) return <span className={className} aria-label={`${alt} image unavailable`}>CS2</span>;
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={current} alt={alt} loading="lazy" referrerPolicy="no-referrer" onError={() => setCurrent((value) => fallback && fallback !== value ? fallback : null)} />
+    <img className={className} src={current} alt={alt} loading="lazy" referrerPolicy="no-referrer" onError={() => setCurrent((value) => fallback && fallback !== value ? fallback : null)} />
   );
 }
 
@@ -161,7 +161,7 @@ export default function WorkspacePage() {
       setCatalogFilters({
         q: params.get("q") || "", itemType: params.get("itemType") || "", weaponCategory: params.get("weaponCategory") || "",
         weapon: params.get("weapon") || "", rarity: params.get("rarity") || "", wear: params.get("wear") || "",
-        sort: params.get("sort") || "default", onlyWithPrices: params.get("onlyWithPrices") === "true",
+        sort: params.get("sort") || "default", onlyWithPrices: params.get("onlyWithPrices") !== "false",
         page: Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1,
       });
       if (params.get("view") === "catalog") setInventoryView("catalog");
@@ -213,9 +213,10 @@ export default function WorkspacePage() {
   }), [items, inventoryFilter, inventoryQuery]);
   const activeRequests = requests.filter((request) => ["pending", "contacted", "accepted"].includes(request.status)).length;
   const steamId = user?.steam?.steamId || user?.steamId || null;
-  const steamName = user?.steam?.displayName || user?.steamDisplayName || "Connected Steam account";
+  const steamName = user?.steam?.displayName || user?.steamDisplayName || user?.displayName || "Connected Steam account";
   const steamAvatar = user?.steam?.avatarUrl || user?.steamAvatarUrl || null;
   const steamProfileUrl = user?.steam?.profileUrl || (steamId ? `https://steamcommunity.com/profiles/${steamId}` : null);
+  const accountName = steamId ? steamName : user?.displayName || "User";
   const steamMessage = steamStatus ? steamMessages[steamStatus] : null;
   const priceNotice = catalogPricingNotice(catalog.pricing.status, catalog.pricing.configured);
   const totalsByCurrency = useMemo(() => deals.reduce<Record<string, number>>((totals, deal) => { totals[deal.currency] = (totals[deal.currency] || 0) + deal.amount_cents; return totals; }, {}), [deals]);
@@ -284,8 +285,10 @@ export default function WorkspacePage() {
         </nav>
         <div className="accountMenu">
           {user?.role === "admin" && <a className="adminShortcut" href="/admin">Admin</a>}
-          <div className="avatar">{user?.displayName?.slice(0, 1).toUpperCase() || "U"}</div>
-          <div><strong>{user?.displayName}</strong><small>@{user?.login}</small></div>
+          {steamAvatar
+            ? <SafeImage className="accountAvatar" source={steamAvatar} alt={`${accountName} Steam avatar`} />
+            : <div className="avatar">{accountName.slice(0, 1).toUpperCase()}</div>}
+          <div className="accountIdentity"><strong>{accountName}</strong><small>{steamId ? "Steam connected" : `@${user?.login}`}</small></div>
           <button onClick={logout} aria-label="Sign out">↗</button>
         </div>
       </header>
@@ -325,7 +328,7 @@ export default function WorkspacePage() {
             {inventoryView === "catalog" && priceNotice && <div className="noticeBanner"><strong>{priceNotice.title}</strong><span>{priceNotice.detail}</span></div>}
             {catalogError && inventoryView === "catalog" && <div className="noticeBanner"><strong>Catalog could not be refreshed.</strong><span>{catalogError}</span></div>}
 
-            {inventoryView === "mine" ? <OwnedInventoryGrid items={shownInventory} connected={connected} selected={selected} toggle={toggleSelected} /> : <CatalogGrid catalog={catalog} loading={catalogLoading} sort={catalogFilters.sort} setSort={(sort) => updateCatalog("sort", sort)} setPage={(page) => updateCatalog("page", page)} />}
+            {inventoryView === "mine" ? <OwnedInventoryGrid items={shownInventory} connected={connected} privateInventory={privateInventory} selected={selected} toggle={toggleSelected} /> : <CatalogGrid catalog={catalog} loading={catalogLoading} sort={catalogFilters.sort} setSort={(sort) => updateCatalog("sort", sort)} setPage={(page) => updateCatalog("page", page)} />}
           </section>
         </div>
       ) : section === "requests" ? (
@@ -347,11 +350,11 @@ export default function WorkspacePage() {
 
 function CatalogFiltersPanel({ filters, facets, update }: { filters: CatalogFilters; facets: CatalogResponse["facets"]; update: <Key extends keyof CatalogFilters>(key: Key, value: CatalogFilters[Key]) => void }) {
   const select = (label: string, key: "itemType" | "weaponCategory" | "weapon" | "rarity" | "wear", values: FacetValue[]) => <label className="facetSelect"><span>{label}</span><select value={filters[key]} onChange={(event) => update(key, event.target.value)}><option value="">All</option>{values.map((value) => { const name = facetValue(value); return <option key={name} value={name}>{name}</option>; })}</select></label>;
-  return <><label className="searchBox"><span>⌕</span><input value={filters.q} onChange={(event) => update("q", event.target.value)} placeholder="Search name, market name, weapon, collection…" /></label><div className="catalogFacets">{select("Item type", "itemType", facets.itemTypes)}{select("Weapon category", "weaponCategory", facets.weaponCategories)}{select("Weapon", "weapon", facets.weapons)}{select("Rarity", "rarity", facets.rarities)}{select("Wear", "wear", facets.wears)}<label className="priceOnly"><input type="checkbox" checked={filters.onlyWithPrices} onChange={(event) => update("onlyWithPrices", event.target.checked)} /><span>Only items with prices</span></label></div></>;
+  return <><label className="searchBox"><span>⌕</span><input value={filters.q} onChange={(event) => update("q", event.target.value)} placeholder="Search name, market name, weapon, collection…" /></label><div className="catalogFacets">{select("Item type", "itemType", facets.itemTypes)}{select("Weapon category", "weaponCategory", facets.weaponCategories)}{select("Weapon", "weapon", facets.weapons)}{select("Rarity", "rarity", facets.rarities)}{select("Wear", "wear", facets.wears)}<label className="priceOnly"><input type="checkbox" checked={filters.onlyWithPrices} onChange={(event) => update("onlyWithPrices", event.target.checked)} /><span>Only market-priced items</span></label></div></>;
 }
 
-function OwnedInventoryGrid({ items, connected, selected, toggle }: { items: InventoryItem[]; connected: boolean; selected: Set<string>; toggle: (id: string) => void }) {
-  return <><div className="inventoryStats"><article><span>OWNED ITEMS</span><strong>{items.length}</strong><small>Verified Steam assets</small></article><article><span>TRADABLE</span><strong>{items.filter((item) => item.tradable).length}</strong><small>For reference only</small></article><article><span>SELECTED</span><strong>{selected.size}</strong><small>Maximum 20 per request</small></article><article className="safeCard"><i>✓</i><div><strong>READ ONLY</strong><small>No trade actions</small></div></article></div><div className="gridToolbar"><span>{items.length} shown · {selected.size ? `${selected.size} selected for sale review` : "Only owned assets can be selected"}</span></div><div className="inventoryGrid">{items.map((item) => <article className={`inventoryCard ${selected.has(item.id) ? "selectedForSale" : ""}`} key={item.id}><div className="cardFlags"><span style={{ background: `#${item.color}` }} /><b>{item.tradable ? "TRADABLE" : "OWNED"}</b></div><button className="selectForSale" onClick={() => toggle(item.id)} aria-label={`${selected.has(item.id) ? "Remove" : "Add"} ${item.name} ${selected.has(item.id) ? "from" : "to"} sale request`}>{selected.has(item.id) ? "✓" : "+"}</button><div className="inventoryImage"><SafeImage source={item.iconUrl} fallback={item.fallbackIconUrl} alt={item.name} /></div><strong>{item.weapon || item.name.split(" | ")[0]}</strong><p>{item.name.split(" | ")[1] || item.name}</p><small>{item.amount > 1 ? `Quantity ${item.amount}` : item.wear || item.type} · Asset {item.id}</small></article>)}{!items.length && <div className="emptyInventory"><span>⌕</span><h2>{connected ? "No matching owned items" : "Steam is not connected"}</h2><p>{connected ? "Try another search or filter." : "Connect through official Steam OpenID to load My Inventory."}</p></div>}</div></>;
+function OwnedInventoryGrid({ items, connected, privateInventory, selected, toggle }: { items: InventoryItem[]; connected: boolean; privateInventory: boolean; selected: Set<string>; toggle: (id: string) => void }) {
+  return <><div className="inventoryStats"><article><span>OWNED ITEMS</span><strong>{items.length}</strong><small>Verified Steam assets</small></article><article><span>TRADABLE</span><strong>{items.filter((item) => item.tradable).length}</strong><small>For reference only</small></article><article><span>SELECTED</span><strong>{selected.size}</strong><small>Maximum 20 per request</small></article><article className="safeCard"><i>✓</i><div><strong>READ ONLY</strong><small>No trade actions</small></div></article></div><div className="gridToolbar"><span>{items.length} shown · {selected.size ? `${selected.size} selected for sale review` : "Only owned assets can be selected"}</span></div><div className="inventoryGrid">{items.map((item) => <article className={`inventoryCard ${selected.has(item.id) ? "selectedForSale" : ""}`} key={item.id}><div className="cardFlags"><span style={{ background: `#${item.color}` }} /><b>{item.tradable ? "TRADABLE" : "OWNED"}</b></div><button className="selectForSale" onClick={() => toggle(item.id)} aria-label={`${selected.has(item.id) ? "Remove" : "Add"} ${item.name} ${selected.has(item.id) ? "from" : "to"} sale request`}>{selected.has(item.id) ? "✓" : "+"}</button><div className="inventoryImage"><SafeImage source={item.iconUrl} fallback={item.fallbackIconUrl} alt={item.name} /></div><strong>{item.weapon || item.name.split(" | ")[0]}</strong><p>{item.name.split(" | ")[1] || item.name}</p><small>{item.amount > 1 ? `Quantity ${item.amount}` : item.wear || item.type} · Asset {item.id}</small></article>)}{!items.length && <div className="emptyInventory"><span>⌕</span><h2>{privateInventory ? "Steam inventory is private" : connected ? "No matching owned items" : "Steam is not connected"}</h2><p>{privateInventory ? "Set Inventory visibility to Public in Steam privacy settings, then refresh." : connected ? "Try another search or filter." : "Connect through official Steam OpenID to load My Inventory."}</p></div>}</div></>;
 }
 
 function CatalogGrid({ catalog, loading, sort, setSort, setPage }: { catalog: CatalogResponse; loading: boolean; sort: string; setSort: (sort: string) => void; setPage: (page: number) => void }) {

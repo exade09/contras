@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildCatalogFacets,
+  GAME_RARITIES,
   createCatalogLoader,
   fetchJsonWithRetry,
   normalizeCatalogPayloads,
@@ -21,7 +22,7 @@ function skin(id, weapon, category, wear = "Factory New", extras = {}) {
     weapon: { id: `weapon-${id}`, name: weapon },
     category: { id: `category-${category}`, name: category },
     wear: { id: `wear-${wear}`, name: wear },
-    rarity: { id: "rarity-test", name: "Test Grade", color: "#4b69ff" },
+    rarity: { id: "rarity-test", name: "Restricted", color: "#8847ff" },
     collections: [{ id: "collection-test", name: "The Test Collection" }],
     image,
     ...extras,
@@ -79,6 +80,9 @@ test("normalizes every required catalog category and keeps official images", () 
     assert.ok(facets.itemTypes.includes(type), `missing ${type}`);
   }
   assert.equal(catalog.find((entry) => entry.id === "skin-pistol-0")?.image, image);
+  assert.ok(facets.rarities.every((rarity) => GAME_RARITIES.includes(rarity)));
+  assert.ok(!facets.rarities.includes("Default"));
+  assert.ok(!facets.rarities.includes("Highlight Base Grade"));
   assert.equal(trustedCatalogImage("http://example.com/item.png"), null);
   assert.equal(trustedCatalogImage("https://example.com/item.png"), null);
 });
@@ -108,7 +112,7 @@ test("searches metadata fields and applies category, rarity, weapon, and wear fi
   assert.equal(queryCatalog(catalog, { itemType: "Agents" }).total, 1);
   assert.equal(queryCatalog(catalog, { weaponCategory: "Sniper Rifles" }).items[0].weapon, "AWP");
   assert.equal(queryCatalog(catalog, { weaponCategory: "Heavy" }).total, 2);
-  assert.equal(queryCatalog(catalog, { weapon: "MP9", rarity: "Test Grade", wear: "Factory New" }).total, 1);
+  assert.equal(queryCatalog(catalog, { weapon: "MP9", rarity: "Restricted", wear: "Factory New" }).total, 1);
   assert.equal(queryCatalog(catalog, { query: "does-not-exist" }).total, 0);
 });
 

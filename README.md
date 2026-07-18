@@ -27,7 +27,7 @@ manually.
 - Official Steam OpenID 2.0 authentication
 - Steam Community inventory endpoint for app `730`, context `2`, in English
 - ByMykel/CSGO-API English catalog metadata
-- A disabled-by-default CS.MONEY price-provider boundary
+- Documented public Skinport market pricing with exact variant matching
 
 Cloudflare Workers, Vinext, Wrangler, and D1 are not part of the production
 runtime. The old SQLite/D1 migration history remains in `drizzle/` solely for
@@ -143,14 +143,12 @@ code; every other secret stays server-side.
 | `CSGO_API_BASE_URL` | `https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/` | Server-side base URL for English `all.json` and `skins_not_grouped.json`. HTTPS is required except for loopback test fixtures. |
 | `CSGO_API_CACHE_TTL_SECONDS` | `21600` | In-process catalog metadata cache lifetime; six hours by default. |
 
-### CS.MONEY pricing
+### Skinport pricing
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `CSMONEY_API_BASE_URL` | empty | Reserved for an authorized, documented CS.MONEY API contract. |
-| `CSMONEY_API_KEY` | empty | Reserved server-only credential for that contract. |
-| `CSMONEY_PRICE_CURRENCY` | `USD` | Requested three-letter currency for a future authorized provider. |
-| `CSMONEY_PRICE_CACHE_TTL_SECONDS` | `300` | Fresh price-cache lifetime in seconds; five minutes by default. |
+| `SKINPORT_PRICE_CURRENCY` | `USD` | Currency requested from the documented public Skinport items endpoint. |
+| `SKINPORT_PRICE_CACHE_TTL_SECONDS` | `300` | Fresh price-cache lifetime in seconds; five minutes by default. |
 
 ## Steam OpenID and inventory
 
@@ -220,29 +218,20 @@ uses CDN cache headers, while callers still receive source and stale metadata.
 The in-memory last-known-good cache is per serverless instance, not a durable
 cross-deployment cache. The bundled fixture is the deterministic outage floor.
 
-## CS.MONEY price status
+## Skinport price status
 
-Live CS.MONEY pricing is intentionally disabled until an authorized API URL,
-authentication method, response schema, price semantics, currency behavior,
-rate limits, and usage terms are supplied and documented.
+Production pricing uses Skinport's documented public `GET /v1/items` endpoint
+for app `730` with `tradable=0`. It requires no API key, is cached by Skinport
+for five minutes, and is fetched no more often than the application price-cache
+TTL. The lowest current listing is preferred; when no listing exists, Skinport's
+`suggested_price` is used. No HTML pages or private browser endpoints are scraped.
 
-**No live CS.MONEY response field is currently selected, mapped, or claimed.**
-In particular, the internal `amountMinor` property is only the typed normalized
-provider interface used by deterministic fixtures. It is not the name of a
-CS.MONEY field and is not evidence that a listing, buy, sell, trade, or cash price
-has been chosen.
-
-Supplying `CSMONEY_API_BASE_URL` and `CSMONEY_API_KEY` alone does not activate a
-network integration. The production provider continues to return an explicit
-unavailable state until the documented contract is implemented. The application
-does not scrape CS.MONEY, discover private browser endpoints, estimate prices,
-substitute another provider, or display zero for a missing price.
-
-The provider boundary expects future valid values to be normalized as positive
-integer minor units plus an ISO three-letter currency and optional update time.
+Values are normalized as positive integer minor units plus an ISO three-letter
+currency and optional update time.
 Currency fraction digits are derived through `Intl.NumberFormat`, so currencies
 are not assumed to always have two decimals. Exact `market_hash_name` matching is
-used; fuzzy matching is prohibited. Items without a price remain visible.
+used; fuzzy matching is prohibited. Items without an exact Skinport match remain
+visible and explicitly show that the price is unavailable.
 
 The price cache is separate from catalog metadata. Its default fresh lifetime is
 five minutes, with a 30-minute stale-while-revalidate window. A cached or
@@ -289,7 +278,7 @@ Deployment sequence:
 
 1. Create the target PostgreSQL database and copy its pooled URL.
 2. Configure all required environment variables separately for Preview and
-   Production. Keep database, session, admin, Steam, and CS.MONEY secrets
+   Production. Keep database, session, admin, and Steam secrets
    server-only.
 3. Run `npm run db:migrate` explicitly against the target database from an
    approved environment.
@@ -343,8 +332,8 @@ After deployment, verify manually:
    normal users cannot access admin routes.
 4. The catalog loads, searches, filters, sorts, paginates, and remains available
    when the upstream is deliberately unavailable.
-5. The production price state is clearly unavailable and no invented value is
-   rendered while the CS.MONEY contract is absent.
+5. Skinport prices load through the documented public endpoint, exact variants
+   match by `market_hash_name`, and missing prices remain explicit.
 6. Connect Steam redirects only to `steamcommunity.com/openid/login`, and the
    callback uses the exact canonical origin.
 7. Using a real Steam account, test first sign-in, repeat sign-in, existing-account
@@ -359,11 +348,11 @@ After deployment, verify manually:
 
 Current external-verification status:
 
-- A real-account Steam OpenID and inventory smoke test has not been completed.
+- Steam OpenID start and the public/private inventory states are covered by tests;
+  complete callback behavior still requires a real Steam account smoke test.
 - Optional Steam profile enrichment with a real `STEAM_API_KEY` has not been verified.
-- A live authorized CS.MONEY API has not been integrated or verified, and no live
-  price field has been selected.
-- A remote Vercel deployment and `vercel build` have not been completed.
+- The documented public Skinport items response has been verified with live data.
+- The application has been deployed to Vercel and its production build verified.
 - Live D1 data has not been exported or imported into PostgreSQL.
 
 Do not describe any of those external paths as working until the corresponding

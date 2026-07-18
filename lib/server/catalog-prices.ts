@@ -1,4 +1,5 @@
-export const CSMONEY_SOURCE = "CS.MONEY" as const;
+export const SKINPORT_SOURCE = "Skinport" as const;
+export const SKINPORT_ITEMS_ENDPOINT = "https://api.skinport.com/v1/items";
 
 export type PriceBatchStatus = "available" | "partial" | "unavailable" | "temporarily_unavailable";
 export type PriceCacheState = "hit" | "miss" | "stale";
@@ -12,7 +13,7 @@ export type CatalogPriceRecord = {
 };
 
 export type PriceProviderBatch = {
-  source: typeof CSMONEY_SOURCE;
+  source: typeof SKINPORT_SOURCE;
   status: PriceBatchStatus;
   currency: string;
   prices: CatalogPriceRecord[];
@@ -31,7 +32,7 @@ export type CatalogPriceView = {
   status: CatalogPriceStatus;
   amountMinor: number | null;
   currency: string | null;
-  source: typeof CSMONEY_SOURCE;
+  source: typeof SKINPORT_SOURCE;
   updatedAt: string | null;
   stale: boolean;
 };
@@ -87,7 +88,7 @@ export function validateCurrency(value: unknown): string | null {
   }
 }
 
-export function configuredPriceCurrency(value = environment().CSMONEY_PRICE_CURRENCY) {
+export function configuredPriceCurrency(value = environment().SKINPORT_PRICE_CURRENCY) {
   return validateCurrency(value) || "USD";
 }
 
@@ -158,7 +159,7 @@ function normalizeBatch(batch: PriceProviderBatch, currency: string, configured:
   const allowedStatus: PriceBatchStatus[] = ["available", "partial", "unavailable", "temporarily_unavailable"];
   const status = allowedStatus.includes(batch.status) ? batch.status : "temporarily_unavailable";
   return {
-    source: CSMONEY_SOURCE,
+    source: SKINPORT_SOURCE,
     status,
     currency: normalizedCurrency,
     prices,
@@ -175,15 +176,15 @@ export class UnavailableCatalogPriceProvider implements CatalogPriceProvider {
   private readonly reason: string;
 
   constructor(options: { id?: string; configured?: boolean; reason?: string } = {}) {
-    this.id = options.id || "csmoney-unavailable";
+    this.id = options.id || "skinport-unavailable";
     this.configured = Boolean(options.configured);
-    this.reason = options.reason || "CS.MONEY API access is not configured";
+    this.reason = options.reason || "Skinport pricing is unavailable";
   }
 
   async getPrices(_marketHashNames: readonly string[], currency: string): Promise<PriceProviderBatch> {
     const now = new Date().toISOString();
     return {
-      source: CSMONEY_SOURCE,
+      source: SKINPORT_SOURCE,
       status: "unavailable",
       currency: validateCurrency(currency) || "USD",
       prices: [],
@@ -204,7 +205,7 @@ export class MockCatalogPriceProvider implements CatalogPriceProvider {
   calls = 0;
 
   constructor(records: PriceRecordInput[], options: { id?: string; status?: PriceBatchStatus; reason?: string } = {}) {
-    this.id = options.id || "csmoney-mock";
+    this.id = options.id || "skinport-mock";
     this.records = records.map(normalizePriceRecord).filter((record): record is CatalogPriceRecord => Boolean(record));
     this.status = options.status || "available";
     this.reason = options.reason;
@@ -218,7 +219,7 @@ export class MockCatalogPriceProvider implements CatalogPriceProvider {
     const prices = this.records.filter((record) => requested.has(record.marketHashName) && record.currency === normalizedCurrency);
     const status = this.status === "available" && prices.length < requested.size ? "partial" : this.status;
     return {
-      source: CSMONEY_SOURCE,
+      source: SKINPORT_SOURCE,
       status,
       currency: normalizedCurrency,
       prices,
@@ -230,17 +231,135 @@ export class MockCatalogPriceProvider implements CatalogPriceProvider {
   }
 }
 
-export function createProductionCatalogPriceProvider(
-  values: { CSMONEY_API_BASE_URL?: string; CSMONEY_API_KEY?: string } = environment(),
-) {
-  const hasConfiguration = Boolean(values.CSMONEY_API_BASE_URL?.trim() && values.CSMONEY_API_KEY?.trim());
-  return new UnavailableCatalogPriceProvider({
-    id: hasConfiguration ? "csmoney-contract-unavailable" : "csmoney-unconfigured",
-    configured: hasConfiguration,
-    reason: hasConfiguration
-      ? "Authorized CS.MONEY API contract details are not available"
-      : "CS.MONEY API access is not configured",
-  });
+type SkinportFetchLike = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
+type SkinportProviderOptions = {
+  endpoint?: string;
+  fetchImpl?: SkinportFetchLike;
+  timeoutMs?: number;
+  now?: () => number;
+};
+
+const SKINPORT_CURRENCIES = new Set([
+  "AUD", "BRL", "CAD", "CHF", "CNY", "CZK", "DKK", "EUR", "GBP",
+  "HRK", "NOK", "PLN", "RUB", "SEK", "TRY", "USD",
+]);
+
+function skinportMinorUnits(value: unknown, currency: string) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
+  const digits = currencyMinorDigits(currency);
+  if (digits === null) return null;
+  const amount = Math.round(value * (10 ** digits));
+  return Number.isSafeInteger(amount) && amount > 0 ? amount : null;
+}
+
+function skinportTimestamp(value: unknown) {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) return null;
+  return normalizeTimestamp(value * 1_000);
+}
+
+/** Public, documented Skinport market-price feed. No API key is required. */
+export class SkinportCatalogPriceProvider implements CatalogPriceProvider {
+  readonly id = "skinport-items-v1";
+  readonly configured = true;
+  private readonly endpoint: string;
+  private readonly fetchImpl: SkinportFetchLike;
+  private readonly timeoutMs: number;
+  private readonly now: () => number;
+
+  constructor(options: SkinportProviderOptions = {}) {
+    this.endpoint = options.endpoint || SKINPORT_ITEMS_ENDPOINT;
+    this.fetchImpl = options.fetchImpl || fetch;
+    this.timeoutMs = positiveInteger(options.timeoutMs, 12_000);
+    this.now = options.now || Date.now;
+  }
+
+  async getPrices(marketHashNames: readonly string[], requestedCurrency: string): Promise<PriceProviderBatch> {
+    const requestedAt = new Date(this.now()).toISOString();
+    const currency = validateCurrency(requestedCurrency) || "USD";
+    if (!SKINPORT_CURRENCIES.has(currency)) {
+      return {
+        source: SKINPORT_SOURCE,
+        status: "unavailable",
+        currency,
+        prices: [],
+        requestedAt,
+        completedAt: requestedAt,
+        reason: `Skinport does not support ${currency}`,
+        configured: true,
+      };
+    }
+
+    const requested = new Set(normalizeNames(marketHashNames));
+    const endpoint = new URL(this.endpoint);
+    if (endpoint.protocol !== "https:" || endpoint.origin !== "https://api.skinport.com") {
+      throw new Error("Skinport price endpoint must use the official HTTPS origin");
+    }
+    endpoint.search = new URLSearchParams({
+      app_id: "730",
+      currency,
+      tradable: "0",
+    }).toString();
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const response = await this.fetchImpl(endpoint, {
+        method: "GET",
+        headers: {
+          accept: "application/json",
+          "accept-encoding": "br",
+          "user-agent": "contras.fun catalog pricing",
+        },
+        redirect: "error",
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`Skinport pricing returned HTTP ${response.status}`);
+      const body = await response.text();
+      if (body.length > 64 * 1024 * 1024) throw new Error("Skinport pricing response is too large");
+      const payload = JSON.parse(body) as unknown;
+      if (!Array.isArray(payload)) throw new Error("Skinport pricing response has an invalid schema");
+
+      const prices: CatalogPriceRecord[] = [];
+      for (const entry of payload) {
+        if (!entry || typeof entry !== "object") continue;
+        const record = entry as Record<string, unknown>;
+        const marketHashName = cleanMarketHashName(record.market_hash_name);
+        if (!requested.has(marketHashName) || validateCurrency(record.currency) !== currency) continue;
+        const amountMinor = skinportMinorUnits(record.min_price, currency)
+          ?? skinportMinorUnits(record.suggested_price, currency);
+        if (!amountMinor) continue;
+        prices.push({
+          marketHashName,
+          amountMinor,
+          currency,
+          updatedAt: skinportTimestamp(record.updated_at),
+        });
+      }
+
+      return {
+        source: SKINPORT_SOURCE,
+        status: prices.length === requested.size ? "available" : "partial",
+        currency,
+        prices,
+        requestedAt,
+        completedAt: new Date(this.now()).toISOString(),
+        reason: prices.length === requested.size
+          ? undefined
+          : "Some catalog variants do not have an exact Skinport market price",
+        configured: true,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
+export function createProductionCatalogPriceProvider(options: SkinportProviderOptions = {}) {
+  return new SkinportCatalogPriceProvider(options);
 }
 
 export class CatalogPriceCache {
@@ -301,13 +420,13 @@ export class CatalogPriceCache {
       if (entry) return { ...entry.batch, cache: "stale", cacheStale: true };
       const timestamp = new Date(now).toISOString();
       return {
-        source: CSMONEY_SOURCE,
+        source: SKINPORT_SOURCE,
         status: "temporarily_unavailable",
         currency,
         prices: [],
         requestedAt: timestamp,
         completedAt: timestamp,
-        reason: "CS.MONEY pricing is temporarily unavailable",
+        reason: "Skinport pricing is temporarily unavailable",
         configured: provider.configured,
         cache: "miss",
         cacheStale: false,
@@ -338,7 +457,7 @@ export function attachCatalogPrices<
         status: missingPriceStatus(batch),
         amountMinor: null,
         currency: null,
-        source: CSMONEY_SOURCE,
+        source: SKINPORT_SOURCE,
         updatedAt: null,
         stale: false,
       };
@@ -350,7 +469,7 @@ export function attachCatalogPrices<
       status: stale ? "stale" : "available",
       amountMinor: price.amountMinor,
       currency: price.currency,
-      source: CSMONEY_SOURCE,
+      source: SKINPORT_SOURCE,
       updatedAt: price.updatedAt,
       stale,
     };
@@ -358,7 +477,7 @@ export function attachCatalogPrices<
   });
 }
 
-const priceTtlSeconds = positiveInteger(environment().CSMONEY_PRICE_CACHE_TTL_SECONDS, 300);
+const priceTtlSeconds = positiveInteger(environment().SKINPORT_PRICE_CACHE_TTL_SECONDS, 300);
 const productionPriceProvider = createProductionCatalogPriceProvider();
 const productionPriceCache = new CatalogPriceCache({ ttlMs: priceTtlSeconds * 1_000 });
 

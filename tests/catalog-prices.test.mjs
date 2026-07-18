@@ -142,7 +142,7 @@ test("price cache provides hits, request coalescing, and stale-while-revalidate"
       calls += 1;
       await new Promise((resolve) => { resolveRequest = resolve; });
       return {
-        source: "CS.MONEY",
+        source: "Skinport",
         status: "available",
         currency,
         prices: [{ marketHashName: names[0], amountMinor: 100, currency, updatedAt: "2026-01-01T00:00:00Z" }],
@@ -170,17 +170,50 @@ test("price cache provides hits, request coalescing, and stale-while-revalidate"
   resolveRequest();
 });
 
-test("production provider never calls an undocumented endpoint", async () => {
-  const configured = createProductionCatalogPriceProvider({
-    CSMONEY_API_BASE_URL: "https://authorized.example.test",
-    CSMONEY_API_KEY: "test-only-key",
+test("production provider uses the documented Skinport endpoint and exact market variants", async () => {
+  let request;
+  const provider = createProductionCatalogPriceProvider({
+    now: () => Date.parse("2026-07-18T12:00:00Z"),
+    fetchImpl: async (input, init) => {
+      request = { url: input.toString(), init };
+      return Response.json([
+        {
+          market_hash_name: "AK-47 | Test (Factory New)",
+          currency: "USD",
+          suggested_price: 12.5,
+          min_price: 11.25,
+          updated_at: 1_752_840_000,
+        },
+        {
+          market_hash_name: "AK-47 | Test (Field-Tested)",
+          currency: "USD",
+          suggested_price: 7.75,
+          min_price: null,
+          updated_at: 1_752_840_000,
+        },
+        {
+          market_hash_name: "Unrequested item",
+          currency: "USD",
+          suggested_price: 99,
+          min_price: 98,
+          updated_at: 1_752_840_000,
+        },
+      ]);
+    },
   });
-  const result = await configured.getPrices(["AK-47 | Test"], "USD");
-  assert.equal(configured.configured, true);
-  assert.equal(result.status, "unavailable");
-  assert.equal(result.prices.length, 0);
-  assert.match(result.reason, /contract details/i);
-  assert.doesNotMatch(JSON.stringify(result), /test-only-key/);
+  const result = await provider.getPrices([
+    "AK-47 | Test (Factory New)",
+    "AK-47 | Test (Field-Tested)",
+  ], "USD");
+
+  assert.equal(result.status, "available");
+  assert.equal(result.prices.length, 2);
+  assert.equal(result.prices[0].amountMinor, 1_125);
+  assert.equal(result.prices[1].amountMinor, 775);
+  assert.match(request.url, /^https:\/\/api\.skinport\.com\/v1\/items\?/);
+  assert.match(request.url, /app_id=730/);
+  assert.match(request.url, /currency=USD/);
+  assert.equal(request.init.headers["accept-encoding"], "br");
 });
 
 test("provider timeouts and rate limits degrade to a temporary unavailable batch", async () => {
