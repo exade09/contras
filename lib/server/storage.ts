@@ -13,6 +13,7 @@ export type RuntimeEnv = {
   DATABASE_POOL_MAX?: string;
   DATABASE_URL?: string;
   NEXT_PUBLIC_APP_URL?: string;
+  PAYMENT_DATA_ENCRYPTION_KEY?: string;
   SESSION_SECRET?: string;
   STEAM_API_KEY?: string;
   STEAMAPIS_API_KEY?: string;
@@ -31,6 +32,7 @@ export function runtimeEnv(): RuntimeEnv {
     DATABASE_POOL_MAX: process.env.DATABASE_POOL_MAX,
     DATABASE_URL: process.env.DATABASE_URL,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+    PAYMENT_DATA_ENCRYPTION_KEY: process.env.PAYMENT_DATA_ENCRYPTION_KEY,
     SESSION_SECRET: process.env.SESSION_SECRET,
     STEAM_API_KEY: process.env.STEAM_API_KEY,
     STEAMAPIS_API_KEY: process.env.STEAMAPIS_API_KEY,

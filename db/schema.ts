@@ -181,6 +181,7 @@ export const userPaymentProfiles = pgTable(
     recipientName: text("recipient_name").notNull(),
     kaspiPhone: text("kaspi_phone").notNull().default(""),
     cardLast4: text("card_last4").notNull().default(""),
+    cardPanEncrypted: text("card_pan_encrypted").notNull().default(""),
     updatedByRole: text("updated_by_role").notNull().default("user"),
     createdAt: timestampColumn("created_at").notNull().defaultNow(),
     updatedAt: timestampColumn("updated_at").notNull().defaultNow(),
@@ -204,9 +205,32 @@ export const userPaymentProfiles = pgTable(
       sql`${table.kaspiPhone} <> '' or ${table.cardLast4} <> ''`,
     ),
     check(
+      "user_payment_profiles_card_pan_check",
+      sql`${table.cardPanEncrypted} = '' or (${table.cardLast4} <> '' and char_length(${table.cardPanEncrypted}) between 40 and 1024 and ${table.cardPanEncrypted} ~ '^v1\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$')`,
+    ),
+    check(
       "user_payment_profiles_updated_by_role_check",
       sql`${table.updatedByRole} in ('user', 'admin')`,
     ),
+  ],
+);
+
+export const paymentProfileAccessEvents = pgTable(
+  "payment_profile_access_events",
+  {
+    id: text("id").primaryKey(),
+    actorUserId: text("actor_user_id")
+      .references(() => users.id, { onDelete: "set null" }),
+    targetUserId: text("target_user_id")
+      .references(() => users.id, { onDelete: "set null" }),
+    action: text("action").notNull().default("reveal"),
+    ipHash: text("ip_hash").notNull(),
+    createdAt: timestampColumn("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("payment_profile_access_actor_idx").on(table.actorUserId, table.createdAt.desc()),
+    index("payment_profile_access_target_idx").on(table.targetUserId, table.createdAt.desc()),
+    check("payment_profile_access_action_check", sql`${table.action} = 'reveal'`),
   ],
 );
 

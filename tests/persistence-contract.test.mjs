@@ -62,3 +62,15 @@ test("user payout profiles are migrated as structured safe references", async ()
   assert.match(migration, /user_payment_profiles_reference_check/);
   assert.doesNotMatch(migration, /card_number|cvv|cvc|pin/);
 });
+
+test("full card numbers use encrypted storage and audited reveal access", async () => {
+  const migration = await readFile("drizzle-postgres/0002_many_screwball.sql", "utf8");
+  const revealRoute = await readFile("app/api/admin/payment-profile/reveal/route.ts", "utf8");
+  assert.match(migration, /"card_pan_encrypted" text/);
+  assert.match(migration, /CREATE TABLE "payment_profile_access_events"/);
+  assert.doesNotMatch(migration, /cvv|cvc|pin|expiry/);
+  assert.match(revealRoute, /requireAdmin\(request\)/);
+  assert.match(revealRoute, /sameOrigin\(request\)/);
+  assert.match(revealRoute, /paymentProfileAccessEvents/);
+  assert.match(revealRoute, /"cache-control": "private, no-store, max-age=0"/);
+});

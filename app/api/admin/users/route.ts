@@ -59,6 +59,7 @@ export async function GET(request: Request) {
         payment_recipient_name: userPaymentProfiles.recipientName,
         payment_kaspi_phone: userPaymentProfiles.kaspiPhone,
         payment_card_last4: userPaymentProfiles.cardLast4,
+        payment_has_card_number: sql<boolean>`${userPaymentProfiles.cardPanEncrypted} <> ''`,
         payment_updated_by_role: userPaymentProfiles.updatedByRole,
         payment_updated_at: userPaymentProfiles.updatedAt,
         created_at: users.createdAt,
@@ -83,6 +84,7 @@ export async function GET(request: Request) {
         userPaymentProfiles.recipientName,
         userPaymentProfiles.kaspiPhone,
         userPaymentProfiles.cardLast4,
+        userPaymentProfiles.cardPanEncrypted,
         userPaymentProfiles.updatedByRole,
         userPaymentProfiles.updatedAt,
       )

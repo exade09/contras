@@ -8,6 +8,7 @@ import { GET as getTradeRequests, POST as createTradeRequest } from "../app/api/
 import { POST as disconnectSteam } from "../app/api/steam/disconnect/route.ts";
 import { GET as getPaymentProfile, PUT as putPaymentProfile } from "../app/api/payment-profile/route.ts";
 import { PUT as putAdminPaymentProfile } from "../app/api/admin/payment-profile/route.ts";
+import { POST as revealAdminPaymentProfile } from "../app/api/admin/payment-profile/reveal/route.ts";
 
 async function errorBody(response) {
   const body = await response.json();
@@ -41,6 +42,7 @@ test("mutating account and sale routes reject missing Origin before authenticati
     disconnectSteam(new Request("https://contras.example/api/steam/disconnect", { method: "POST" })),
     putPaymentProfile(new Request("https://contras.example/api/payment-profile", { method: "PUT" })),
     putAdminPaymentProfile(new Request("https://contras.example/api/admin/payment-profile", { method: "PUT" })),
+    revealAdminPaymentProfile(new Request("https://contras.example/api/admin/payment-profile/reveal", { method: "POST" })),
   ];
   for (const responsePromise of cases) {
     const response = await responsePromise;

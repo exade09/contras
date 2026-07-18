@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { userPaymentProfiles } from "@/db/schema";
 import { requireUser, routeError } from "@/lib/server/auth";
 import {
+  encryptCardNumber,
   serializeUserPaymentProfile,
   validateUserPaymentProfile,
 } from "@/lib/server/payment-profile";
@@ -32,12 +33,19 @@ export async function PUT(request: Request) {
     if (!sameOrigin(request)) return jsonError("Invalid request origin", 403);
     const user = await requireUser(request);
     const body = await request.json().catch(() => null);
-    const validated = validateUserPaymentProfile(body);
+    const existingRows = await getDb().select().from(userPaymentProfiles)
+      .where(eq(userPaymentProfiles.userId, user.id)).limit(1);
+    const existing = existingRows[0];
+    const validated = validateUserPaymentProfile(body, existing?.cardLast4 || "");
     if (!validated.ok) return jsonError(validated.error);
+    const { cardNumber, ...profileValues } = validated.value;
     const now = new Date().toISOString();
     const values = {
       userId: user.id,
-      ...validated.value,
+      ...profileValues,
+      cardPanEncrypted: cardNumber
+        ? encryptCardNumber(cardNumber, user.id)
+        : existing?.cardPanEncrypted || "",
       updatedByRole: "user" as const,
       updatedAt: now,
     };
