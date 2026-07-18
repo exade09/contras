@@ -52,3 +52,13 @@ test("administrator user deletion is origin-protected, forbids self-deletion, an
   assert.match(deleteHandler, /delete\(loginEvents\)/);
   assert.match(deleteHandler, /delete\(users\)/);
 });
+
+test("user payout profiles are migrated as structured safe references", async () => {
+  const migration = await readFile("drizzle-postgres/0001_panoramic_the_anarchist.sql", "utf8");
+  assert.match(migration, /CREATE TABLE "user_payment_profiles"/);
+  assert.match(migration, /"recipient_name" text NOT NULL/);
+  assert.match(migration, /"kaspi_phone" text/);
+  assert.match(migration, /"card_last4" text/);
+  assert.match(migration, /user_payment_profiles_reference_check/);
+  assert.doesNotMatch(migration, /card_number|cvv|cvc|pin/);
+});

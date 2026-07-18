@@ -1,6 +1,6 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { deals, loginEvents, sessions, steamLinks, tradeRequests, users } from "@/db/schema";
+import { deals, loginEvents, sessions, steamLinks, tradeRequests, userPaymentProfiles, users } from "@/db/schema";
 import { hashPassword, requireAdmin, routeError } from "@/lib/server/auth";
 import { clearSteamInventoryCache } from "@/lib/server/steam-inventory";
 import { jsonError, sameOrigin } from "@/lib/server/storage";
@@ -55,6 +55,12 @@ export async function GET(request: Request) {
         role: users.role,
         status: users.status,
         steam_id: steamLinks.steamId,
+        payment_method: userPaymentProfiles.method,
+        payment_recipient_name: userPaymentProfiles.recipientName,
+        payment_kaspi_phone: userPaymentProfiles.kaspiPhone,
+        payment_card_last4: userPaymentProfiles.cardLast4,
+        payment_updated_by_role: userPaymentProfiles.updatedByRole,
+        payment_updated_at: userPaymentProfiles.updatedAt,
         created_at: users.createdAt,
         last_login_at: users.lastLoginAt,
         deal_count: sql<number>`count(${deals.id})::integer`.mapWith(Number),
@@ -62,6 +68,7 @@ export async function GET(request: Request) {
       })
       .from(users)
       .leftJoin(steamLinks, eq(steamLinks.userId, users.id))
+      .leftJoin(userPaymentProfiles, eq(userPaymentProfiles.userId, users.id))
       .leftJoin(deals, eq(deals.userId, users.id))
       .groupBy(
         users.id,
@@ -72,6 +79,12 @@ export async function GET(request: Request) {
         users.createdAt,
         users.lastLoginAt,
         steamLinks.steamId,
+        userPaymentProfiles.method,
+        userPaymentProfiles.recipientName,
+        userPaymentProfiles.kaspiPhone,
+        userPaymentProfiles.cardLast4,
+        userPaymentProfiles.updatedByRole,
+        userPaymentProfiles.updatedAt,
       )
       .orderBy(desc(users.createdAt))
       .limit(200);

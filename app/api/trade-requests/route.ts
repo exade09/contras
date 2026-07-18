@@ -3,10 +3,13 @@ import { getDb } from "@/db";
 import {
   tradeRequestItems,
   tradeRequests,
+  userPaymentProfiles,
   type SaleItemSnapshot,
 } from "@/db/schema";
 import { requireUser, routeError } from "@/lib/server/auth";
 import { configuredSteamInventoryLoader } from "@/lib/server/configured-steam-inventory";
+import { encodePaymentNote } from "@/lib/server/payment-details";
+import { formatUserPaymentProfile } from "@/lib/server/payment-profile";
 import { loadSkinCatalog, type CatalogSkin } from "@/lib/server/skins";
 import {
   groupTradeRequests,
@@ -212,6 +215,12 @@ export async function POST(request: Request) {
     const db = getDb();
     const inserted = await db.transaction(async (transaction) => {
       await transaction.execute(sql`select id from users where id = ${user.id} for update`);
+      const paymentProfileRows = await transaction.select().from(userPaymentProfiles)
+        .where(eq(userPaymentProfiles.userId, user.id)).limit(1);
+      const paymentProfile = paymentProfileRows[0];
+      const requestNote = paymentProfile
+        ? encodePaymentNote(note, "kaspi_card", formatUserPaymentProfile(paymentProfile))
+        : note;
       const activeRows = await transaction.select({ total: count() })
         .from(tradeRequests)
         .where(and(
@@ -226,7 +235,7 @@ export async function POST(request: Request) {
         amountCents,
         currency,
         status: "pending",
-        note,
+        note: requestNote,
         createdAt: now,
         updatedAt: now,
       });

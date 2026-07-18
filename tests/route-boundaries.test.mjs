@@ -6,6 +6,8 @@ import { GET as getAdminUsers, POST as createAdminUser } from "../app/api/admin/
 import { GET as getInventory } from "../app/api/inventory/route.ts";
 import { GET as getTradeRequests, POST as createTradeRequest } from "../app/api/trade-requests/route.ts";
 import { POST as disconnectSteam } from "../app/api/steam/disconnect/route.ts";
+import { GET as getPaymentProfile, PUT as putPaymentProfile } from "../app/api/payment-profile/route.ts";
+import { PUT as putAdminPaymentProfile } from "../app/api/admin/payment-profile/route.ts";
 
 async function errorBody(response) {
   const body = await response.json();
@@ -26,6 +28,10 @@ test("database-backed user and administrator reads reject anonymous requests bef
   const requests = await getTradeRequests(new Request("https://contras.example/api/trade-requests"));
   assert.equal(requests.status, 401);
   assert.equal((await errorBody(requests)).error, "Authentication required");
+
+  const paymentProfile = await getPaymentProfile(new Request("https://contras.example/api/payment-profile"));
+  assert.equal(paymentProfile.status, 401);
+  assert.equal((await errorBody(paymentProfile)).error, "Authentication required");
 });
 
 test("mutating account and sale routes reject missing Origin before authentication or writes", async () => {
@@ -33,6 +39,8 @@ test("mutating account and sale routes reject missing Origin before authenticati
     createAdminUser(new Request("https://contras.example/api/admin/users", { method: "POST" })),
     createTradeRequest(new Request("https://contras.example/api/trade-requests", { method: "POST" })),
     disconnectSteam(new Request("https://contras.example/api/steam/disconnect", { method: "POST" })),
+    putPaymentProfile(new Request("https://contras.example/api/payment-profile", { method: "PUT" })),
+    putAdminPaymentProfile(new Request("https://contras.example/api/admin/payment-profile", { method: "PUT" })),
   ];
   for (const responsePromise of cases) {
     const response = await responsePromise;

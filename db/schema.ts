@@ -171,6 +171,45 @@ export const steamLinks = pgTable(
   ],
 );
 
+export const userPaymentProfiles = pgTable(
+  "user_payment_profiles",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    method: text("method").notNull().default("kaspi_card"),
+    recipientName: text("recipient_name").notNull(),
+    kaspiPhone: text("kaspi_phone").notNull().default(""),
+    cardLast4: text("card_last4").notNull().default(""),
+    updatedByRole: text("updated_by_role").notNull().default("user"),
+    createdAt: timestampColumn("created_at").notNull().defaultNow(),
+    updatedAt: timestampColumn("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    check("user_payment_profiles_method_check", sql`${table.method} = 'kaspi_card'`),
+    check(
+      "user_payment_profiles_recipient_name_check",
+      sql`char_length(${table.recipientName}) between 1 and 80`,
+    ),
+    check(
+      "user_payment_profiles_kaspi_phone_check",
+      sql`${table.kaspiPhone} = '' or ${table.kaspiPhone} ~ '^\\+7[0-9]{10}$'`,
+    ),
+    check(
+      "user_payment_profiles_card_last4_check",
+      sql`${table.cardLast4} = '' or ${table.cardLast4} ~ '^[0-9]{4}$'`,
+    ),
+    check(
+      "user_payment_profiles_reference_check",
+      sql`${table.kaspiPhone} <> '' or ${table.cardLast4} <> ''`,
+    ),
+    check(
+      "user_payment_profiles_updated_by_role_check",
+      sql`${table.updatedByRole} in ('user', 'admin')`,
+    ),
+  ],
+);
+
 export const loginEvents = pgTable(
   "login_events",
   {

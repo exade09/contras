@@ -46,7 +46,7 @@ test("official Steam profile enrichment returns the nickname and trusted avatar"
 });
 
 test("public Steam profile supplies a unique nickname and avatar when Web API is unavailable", async () => {
-  const steamId64 = "76561198831672758";
+  const steamId64 = "76561198000000000";
   const profile = await loadSteamProfile(steamId64, {
     fetchImpl: async (input) => {
       const url = new URL(input);
