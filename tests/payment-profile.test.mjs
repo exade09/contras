@@ -37,11 +37,18 @@ test("Kaspi payout profiles require a recipient and safe reference", () => {
   assert.equal(validateUserPaymentProfile({ recipientName: "Test Recipient" }, "1111").ok, true);
 });
 
-test("Kaspi payout profiles reject card numbers in non-card fields and invalid PANs", () => {
+test("Kaspi payout profiles reject card numbers in non-card fields and invalid shapes", () => {
   assert.equal(validateUserPaymentProfile({ recipientName: "4111 1111 1111 1111", cardNumber: "4111111111111111" }).ok, false);
   assert.equal(validateUserPaymentProfile({ recipientName: "Test Recipient", kaspiPhone: "4111 1111 1111 1111" }).ok, false);
   assert.equal(validateUserPaymentProfile({ recipientName: "Test Recipient", kaspiPhone: "4111111111111" }).ok, false);
-  assert.equal(validateUserPaymentProfile({ recipientName: "Test Recipient", cardNumber: "4111111111111112" }).ok, false);
+  assert.equal(validateUserPaymentProfile({ recipientName: "Test Recipient", cardNumber: "411111111111" }).ok, false);
+  assert.equal(validateUserPaymentProfile({ recipientName: "Test Recipient", cardNumber: "41111111111111111111" }).ok, false);
+  assert.equal(validateUserPaymentProfile({ recipientName: "Test Recipient", cardNumber: "411111111111x" }).ok, false);
+});
+
+test("Kaspi payout profiles accept 13-19 digit card numbers without a Luhn checksum", () => {
+  assert.equal(normalizeCardNumber("4111 1111 1111 1112"), "4111111111111112");
+  assert.equal(validateUserPaymentProfile({ recipientName: "Test Recipient", cardNumber: "4111111111111112" }).ok, true);
 });
 
 test("card PAN encryption is authenticated, user-bound, and reversible only with the key", () => {

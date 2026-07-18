@@ -48,26 +48,11 @@ export function normalizeKaspiPhone(value: unknown) {
   return null;
 }
 
-function luhnValid(value: string) {
-  let total = 0;
-  let double = false;
-  for (let index = value.length - 1; index >= 0; index -= 1) {
-    let digit = Number(value[index]);
-    if (double) {
-      digit *= 2;
-      if (digit > 9) digit -= 9;
-    }
-    total += digit;
-    double = !double;
-  }
-  return total % 10 === 0;
-}
-
 export function normalizeCardNumber(value: unknown) {
   if (value === undefined || value === null || value === "") return "";
   if (typeof value !== "string" || /[^0-9\s-]/.test(value)) return null;
   const digits = value.replace(/\D/g, "");
-  if (digits.length < 13 || digits.length > 19 || !luhnValid(digits)) return null;
+  if (digits.length < 13 || digits.length > 19) return null;
   return digits;
 }
 
