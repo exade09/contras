@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { SteamIcon } from "../components/steam-icon";
-import { catalogPageWindow, catalogPricePresentation, catalogPricingNotice, catalogSearchParams, updateCatalogFilter } from "@/lib/catalog-ui";
+import { catalogPageWindow, catalogPricePresentation, catalogSearchParams, updateCatalogFilter } from "@/lib/catalog-ui";
 
 type SteamProfile = { steamId: string; displayName: string | null; avatarUrl: string | null; profileUrl: string };
 type User = {
@@ -218,7 +218,6 @@ export default function WorkspacePage() {
   const steamProfileUrl = user?.steam?.profileUrl || (steamId ? `https://steamcommunity.com/profiles/${steamId}` : null);
   const accountName = steamId ? steamName : user?.displayName || "User";
   const steamMessage = steamStatus ? steamMessages[steamStatus] : null;
-  const priceNotice = catalogPricingNotice(catalog.pricing.status, catalog.pricing.configured);
   const totalsByCurrency = useMemo(() => deals.reduce<Record<string, number>>((totals, deal) => { totals[deal.currency] = (totals[deal.currency] || 0) + deal.amount_cents; return totals; }, {}), [deals]);
 
   function updateCatalog<Key extends keyof CatalogFilters>(key: Key, value: CatalogFilters[Key]) {
@@ -325,7 +324,6 @@ export default function WorkspacePage() {
             {inventoryView === "mine" && privateInventory && <div className="noticeBanner"><strong>Your Steam inventory is private.</strong><span>Set Inventory visibility to Public in Steam privacy settings, then refresh. The public catalog remains available.</span></div>}
             {inventoryView === "mine" && inventoryError && !privateInventory && <div className="noticeBanner"><strong>Inventory could not be loaded.</strong><span>{inventoryError}</span></div>}
             {inventoryView === "catalog" && catalog.catalog.stale && <div className="noticeBanner"><strong>Catalog fallback is active.</strong><span>Last-known-good or bundled English metadata is shown while CSGO-API recovers.</span></div>}
-            {inventoryView === "catalog" && priceNotice && <div className="noticeBanner"><strong>{priceNotice.title}</strong><span>{priceNotice.detail}</span></div>}
             {catalogError && inventoryView === "catalog" && <div className="noticeBanner"><strong>Catalog could not be refreshed.</strong><span>{catalogError}</span></div>}
 
             {inventoryView === "mine" ? <OwnedInventoryGrid items={shownInventory} connected={connected} privateInventory={privateInventory} selected={selected} toggle={toggleSelected} /> : <CatalogGrid catalog={catalog} loading={catalogLoading} sort={catalogFilters.sort} setSort={(sort) => updateCatalog("sort", sort)} setPage={(page) => updateCatalog("page", page)} />}

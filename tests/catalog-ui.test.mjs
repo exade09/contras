@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { catalogPageWindow, catalogPricePresentation, catalogPricingNotice, catalogSearchParams, updateCatalogFilter } from "../lib/catalog-ui.ts";
+import { catalogPageWindow, catalogPricePresentation, catalogSearchParams, updateCatalogFilter } from "../lib/catalog-ui.ts";
 
 const filters = { q: "", itemType: "", weaponCategory: "", weapon: "", rarity: "", wear: "", sort: "default", onlyWithPrices: false, page: 8 };
 
@@ -30,20 +31,20 @@ test("page changes preserve active catalog filters in URL parameters", () => {
   assert.equal(params.get("page"), "5");
 });
 
-test("catalog price presentation renders current, stale, missing, and temporary Skinport states", () => {
+test("catalog price presentation renders current, stale, missing, and temporary states", () => {
   const now = Date.parse("2026-07-18T12:10:00Z");
   assert.deepEqual(catalogPricePresentation({
     status: "available", amountMinor: 12_450, currency: "USD",
     updatedAt: "2026-07-18T12:05:00Z", stale: false,
   }, now), {
-    amountLabel: "$124.50", sourceLabel: "Skinport market price",
+    amountLabel: "$124.50", sourceLabel: "Market price",
     updatedLabel: "Updated 5 minutes ago", available: true, stale: false,
   });
   assert.deepEqual(catalogPricePresentation({
     status: "stale", amountMinor: 8_920, currency: "EUR",
     updatedAt: "2026-07-17T12:10:00Z", stale: true,
   }, now), {
-    amountLabel: "€89.20", sourceLabel: "Skinport market price",
+    amountLabel: "€89.20", sourceLabel: "Market price",
     updatedLabel: "Updated 1 day ago · Stale", available: true, stale: true,
   });
   assert.equal(catalogPricePresentation({
@@ -54,10 +55,8 @@ test("catalog price presentation renders current, stale, missing, and temporary 
   }, now).amountLabel, "Price temporarily unavailable");
 });
 
-test("catalog pricing notices distinguish partial, temporary, and unavailable Skinport states", () => {
-  assert.equal(catalogPricingNotice("available", true), null);
-  assert.match(catalogPricingNotice("partial", true).title, /Some Skinport prices/);
-  assert.match(catalogPricingNotice("temporarily_unavailable", true).title, /temporarily unavailable/);
-  assert.match(catalogPricingNotice("unavailable", false).title, /Skinport pricing is unavailable/);
-  assert.match(catalogPricingNotice("unavailable", true).detail, /public price feed/);
+test("catalog UI does not render provider-branded pricing notices", async () => {
+  const workspace = await readFile("app/workspace/page.tsx", "utf8");
+  assert.doesNotMatch(workspace, /catalogPricingNotice|priceNotice/);
+  assert.doesNotMatch(workspace, /Some Skinport prices|Skinport market price/);
 });

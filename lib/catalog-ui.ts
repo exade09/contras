@@ -46,39 +46,11 @@ export type CatalogPriceViewInput = {
 
 export type CatalogPricePresentation = {
   amountLabel: string;
-  sourceLabel: "Skinport market price";
+  sourceLabel: "Market price";
   updatedLabel: string | null;
   available: boolean;
   stale: boolean;
 };
-
-export function catalogPricingNotice(
-  status: "available" | "partial" | "unavailable" | "temporarily_unavailable",
-  configured: boolean,
-) {
-  if (status === "available") return null;
-  if (status === "partial") {
-    return {
-      title: "Some Skinport prices are unavailable.",
-      detail: "Exact market variants with prices remain labeled; unpriced catalog items stay visible.",
-    };
-  }
-  if (status === "temporarily_unavailable") {
-    return {
-      title: "Skinport pricing is temporarily unavailable.",
-      detail: "Catalog metadata remains available. No price is estimated or substituted.",
-    };
-  }
-  return configured
-    ? {
-        title: "Skinport pricing is unavailable.",
-        detail: "Catalog metadata remains available while the public price feed recovers.",
-      }
-    : {
-        title: "Skinport pricing is unavailable.",
-        detail: "Catalog metadata remains available. No price is estimated or substituted.",
-      };
-}
 
 export function formatCurrencyMinorUnits(amountMinor: number, currency: string) {
   try {
@@ -101,7 +73,7 @@ export function catalogPricePresentation(
       amountLabel: price.status === "temporarily_unavailable"
         ? "Price temporarily unavailable"
         : "Price unavailable",
-      sourceLabel: "Skinport market price",
+      sourceLabel: "Market price",
       updatedLabel: null,
       available: false,
       stale: false,
@@ -124,7 +96,7 @@ export function catalogPricePresentation(
   const stale = price.stale || price.status === "stale";
   return {
     amountLabel: formatCurrencyMinorUnits(price.amountMinor!, price.currency!),
-    sourceLabel: "Skinport market price",
+    sourceLabel: "Market price",
     updatedLabel: updatedLabel ? `${updatedLabel}${stale ? " · Stale" : ""}` : stale ? "Stale" : null,
     available: true,
     stale,
