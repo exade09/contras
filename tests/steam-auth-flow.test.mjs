@@ -28,6 +28,9 @@ test("official Steam profile enrichment returns the nickname and trusted avatar"
     apiKey: "test-key",
     fetchImpl: async (input) => {
       const url = new URL(input);
+      if (url.origin === "https://steamcommunity.com") {
+        return new Response("Steam Community unavailable", { status: 503 });
+      }
       assert.equal(url.origin, "https://api.steampowered.com");
       assert.equal(url.searchParams.get("steamids"), steamId64);
       return Response.json({ response: { players: [{
@@ -40,6 +43,28 @@ test("official Steam profile enrichment returns the nickname and trusted avatar"
 
   assert.equal(profile.displayName, "Inventory Owner");
   assert.equal(profile.avatarUrl, "https://avatars.steamstatic.com/0123456789abcdef0123456789abcdef01234567_full.jpg");
+});
+
+test("public Steam profile supplies a unique nickname and avatar when Web API is unavailable", async () => {
+  const steamId64 = "76561198831672758";
+  const profile = await loadSteamProfile(steamId64, {
+    fetchImpl: async (input) => {
+      const url = new URL(input);
+      assert.equal(url.origin, "https://steamcommunity.com");
+      assert.equal(url.pathname, `/profiles/${steamId64}/`);
+      assert.equal(url.searchParams.get("xml"), "1");
+      return new Response(`<?xml version="1.0" encoding="UTF-8"?>
+        <profile>
+          <steamID64>${steamId64}</steamID64>
+          <steamID><![CDATA[Exade & Friends]]></steamID>
+          <avatarFull><![CDATA[https://avatars.fastly.steamstatic.com/7ea189319c65394a4ac42babb4c90a1d93570d82_full.jpg]]></avatarFull>
+        </profile>`, { headers: { "content-type": "application/xml" } });
+    },
+  });
+
+  assert.equal(profile.steamId64, steamId64);
+  assert.equal(profile.displayName, "Exade & Friends");
+  assert.equal(profile.avatarUrl, "https://avatars.fastly.steamstatic.com/7ea189319c65394a4ac42babb4c90a1d93570d82_full.jpg");
 });
 
 function memoryStore(seed = {}) {

@@ -209,7 +209,95 @@ type ProfileFetchLike = (
   init?: RequestInit,
 ) => Promise<Response>;
 
-/** Optional profile enrichment. OpenID verification never depends on this API. */
+function xmlText(body: string, tag: "steamID64" | "steamID" | "avatarFull") {
+  const match = body.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, "i"));
+  if (!match) return null;
+  const cdata = match[1].trim().match(/^<!\[CDATA\[([\s\S]*)\]\]>$/);
+  return (cdata?.[1] ?? match[1].trim())
+    .replaceAll("&amp;", "&")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&#39;", "'");
+}
+
+async function responseBody(response: Response) {
+  if (!response.ok) return null;
+  const body = await response.text();
+  return body.length <= 64 * 1024 ? body : null;
+}
+
+async function loadSteamWebApiProfile(
+  fallback: SteamProfileSnapshot,
+  apiKey: string,
+  fetchImpl: ProfileFetchLike,
+  signal: AbortSignal,
+) {
+  const endpoint = new URL("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/");
+  endpoint.searchParams.set("key", apiKey);
+  endpoint.searchParams.set("steamids", fallback.steamId64);
+  const response = await fetchImpl(endpoint, {
+    headers: {
+      accept: "application/json",
+      "user-agent": "contras.fun Steam profile enrichment",
+    },
+    redirect: "error",
+    signal,
+  });
+  const body = await responseBody(response);
+  if (!body) return null;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(body) as unknown;
+  } catch {
+    return null;
+  }
+  if (!payload || typeof payload !== "object") return null;
+  const apiResponse = (payload as { response?: unknown }).response;
+  if (!apiResponse || typeof apiResponse !== "object") return null;
+  const players = (apiResponse as { players?: unknown }).players;
+  if (!Array.isArray(players)) return null;
+  const player = players.find((entry) =>
+    entry && typeof entry === "object" &&
+    (entry as { steamid?: unknown }).steamid === fallback.steamId64,
+  ) as { personaname?: unknown; avatarfull?: unknown } | undefined;
+  if (!player) return null;
+  return {
+    ...fallback,
+    displayName: safeDisplayName(player.personaname),
+    avatarUrl: trustedSteamAvatar(player.avatarfull),
+  };
+}
+
+async function loadSteamCommunityProfile(
+  fallback: SteamProfileSnapshot,
+  fetchImpl: ProfileFetchLike,
+  signal: AbortSignal,
+) {
+  const endpoint = new URL(`https://steamcommunity.com/profiles/${fallback.steamId64}/`);
+  endpoint.searchParams.set("xml", "1");
+  const response = await fetchImpl(endpoint, {
+    headers: {
+      accept: "application/xml,text/xml;q=0.9",
+      "user-agent": "contras.fun Steam profile enrichment",
+    },
+    redirect: "error",
+    signal,
+  });
+  const body = await responseBody(response);
+  if (!body || xmlText(body, "steamID64") !== fallback.steamId64) return null;
+  return {
+    ...fallback,
+    displayName: safeDisplayName(xmlText(body, "steamID")),
+    avatarUrl: trustedSteamAvatar(xmlText(body, "avatarFull")),
+  };
+}
+
+function hasSteamIdentity(profile: SteamProfileSnapshot | null): profile is SteamProfileSnapshot {
+  return Boolean(profile?.displayName || profile?.avatarUrl);
+}
+
+/** Optional profile enrichment. OpenID verification never depends on these requests. */
 export async function loadSteamProfile(
   steamId64: string,
   options: {
@@ -225,60 +313,40 @@ export async function loadSteamProfile(
     profileUrl: `https://steamcommunity.com/profiles/${steamId64}`,
   };
   const apiKey = options.apiKey?.trim();
-  if (!apiKey) return fallback;
-
-  const endpoint = new URL("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/");
-  endpoint.searchParams.set("key", apiKey);
-  endpoint.searchParams.set("steamids", steamId64);
+  const fetchImpl = options.fetchImpl ?? fetch;
   const controller = new AbortController();
   const timeoutMs = Math.max(1, options.timeoutMs ?? 7_000);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const request = (async () => {
-      const response = await (options.fetchImpl ?? fetch)(endpoint, {
-        headers: {
-          accept: "application/json",
-          "user-agent": "contras.fun Steam profile enrichment",
-        },
-        redirect: "error",
-        signal: controller.signal,
-      });
-      if (!response.ok) return null;
-      const body = await response.text();
-      if (body.length > 64 * 1024) return null;
-      try {
-        return JSON.parse(body) as unknown;
-      } catch {
-        return null;
-      }
-    })();
-    const timeout = new Promise<null>((resolve) => {
-      timer = setTimeout(() => {
-        controller.abort();
-        resolve(null);
-      }, timeoutMs);
-    });
-    const payload = await Promise.race([request, timeout]);
-    if (!payload || typeof payload !== "object") return fallback;
-    const response = (payload as { response?: unknown }).response;
-    if (!response || typeof response !== "object") return fallback;
-    const players = (response as { players?: unknown }).players;
-    if (!Array.isArray(players)) return fallback;
-    const player = players.find((entry) =>
-      entry && typeof entry === "object" &&
-      (entry as { steamid?: unknown }).steamid === steamId64,
-    ) as { personaname?: unknown; avatarfull?: unknown } | undefined;
-    if (!player) return fallback;
-    return {
-      ...fallback,
-      displayName: safeDisplayName(player.personaname),
-      avatarUrl: trustedSteamAvatar(player.avatarfull),
-    };
-  } catch {
-    return fallback;
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
+  const requests: Array<Promise<SteamProfileSnapshot | null>> = [
+    loadSteamCommunityProfile(fallback, fetchImpl, controller.signal).catch(() => null),
+  ];
+  if (apiKey) {
+    requests.unshift(
+      loadSteamWebApiProfile(fallback, apiKey, fetchImpl, controller.signal).catch(() => null),
+    );
   }
+
+  return new Promise((resolve) => {
+    let remaining = requests.length;
+    let settled = false;
+    const finish = (profile: SteamProfileSnapshot) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      controller.abort();
+      resolve(profile);
+    };
+    const timer = setTimeout(() => finish(fallback), timeoutMs);
+    for (const request of requests) {
+      request.then((profile) => {
+        if (hasSteamIdentity(profile)) {
+          finish(profile);
+          return;
+        }
+        remaining -= 1;
+        if (remaining === 0) finish(fallback);
+      });
+    }
+  });
 }
 
 export function steamStatusRedirect(

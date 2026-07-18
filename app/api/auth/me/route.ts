@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     let user = await getSessionUser(request);
     if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
     const apiKey = runtimeEnv().STEAM_API_KEY?.trim();
-    if (user.steamId && apiKey && (!user.steam?.displayName || !user.steam.avatarUrl)) {
+    if (user.steamId && (!user.steam?.displayName || !user.steam.avatarUrl)) {
       const profile = await loadSteamProfile(user.steamId, { apiKey });
       if (profile.displayName || profile.avatarUrl) {
         const now = new Date().toISOString();
