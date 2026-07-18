@@ -10,6 +10,12 @@ import { getDb } from "@/db";
 import { tradeRequestItems, tradeRequests, users } from "@/db/schema";
 import { requireAdmin, routeError } from "@/lib/server/auth";
 import {
+  decodePaymentNote,
+  encodePaymentNote,
+  isPaymentMethod,
+  validatePaymentDetails,
+} from "@/lib/server/payment-details";
+import {
   canAdminTransitionTradeRequest,
   groupTradeRequests,
   isTradeRequestStatus,
@@ -69,27 +75,68 @@ export async function PATCH(request: Request) {
     const body = await request.json().catch(() => null) as {
       id?: unknown;
       status?: unknown;
+      paymentMethod?: unknown;
+      paymentDetails?: unknown;
     } | null;
     const id = cleanText(body?.id, 64);
-    if (!id || !isTradeRequestStatus(body?.status) || body.status === "cancelled") {
+    const hasPaymentUpdate = Boolean(body) && (
+      Object.prototype.hasOwnProperty.call(body, "paymentMethod") ||
+      Object.prototype.hasOwnProperty.call(body, "paymentDetails")
+    );
+    const hasStatusUpdate = body?.status !== undefined;
+    if (!id || (!hasStatusUpdate && !hasPaymentUpdate)) {
+      return jsonError("Invalid request status");
+    }
+    if (hasStatusUpdate && (!isTradeRequestStatus(body?.status) || body.status === "cancelled")) {
       return jsonError("Invalid request status");
     }
     const db = getDb();
-    const rows = await db.select({ status: tradeRequests.status })
+    const rows = await db.select({
+      status: tradeRequests.status,
+      note: tradeRequests.note,
+    })
       .from(tradeRequests)
       .where(eq(tradeRequests.id, id))
       .limit(1);
     const current = rows[0];
     if (!current) return jsonError("Request not found", 404);
-    if (!isTradeRequestStatus(current.status) ||
+    if (!isTradeRequestStatus(current.status)) {
+      return jsonError("Request has an invalid current status", 409);
+    }
+    if (hasStatusUpdate && isTradeRequestStatus(body?.status) &&
       !canAdminTransitionTradeRequest(current.status, body.status)) {
       return jsonError(
         `Request cannot move from ${current.status} to ${body.status}`,
         409,
       );
     }
+
+    const existingPayment = decodePaymentNote(current.note);
+    let paymentMethod = existingPayment.paymentMethod;
+    let paymentDetails = existingPayment.paymentDetails;
+    if (hasPaymentUpdate) {
+      if (Object.prototype.hasOwnProperty.call(body, "paymentMethod")) {
+        const candidate = body?.paymentMethod;
+        if (candidate === "" || candidate === null) paymentMethod = null;
+        else if (isPaymentMethod(candidate)) paymentMethod = candidate;
+        else return jsonError("Payment method must be Kaspi Bank card");
+      }
+      if (Object.prototype.hasOwnProperty.call(body, "paymentDetails")) {
+        const validated = validatePaymentDetails(body?.paymentDetails);
+        if (!validated.ok) return jsonError(validated.error);
+        paymentDetails = validated.value;
+      }
+      if (paymentDetails && !paymentMethod) {
+        return jsonError("Select a payment method before adding payout details");
+      }
+    }
+
+    const nextStatus = hasStatusUpdate && isTradeRequestStatus(body?.status)
+      ? body.status
+      : current.status;
     const updated = await db.update(tradeRequests).set({
-      status: body.status,
+      status: nextStatus,
+      note: encodePaymentNote(existingPayment.note, paymentMethod, paymentDetails),
       updatedAt: new Date().toISOString(),
     }).where(and(
       eq(tradeRequests.id, id),
@@ -99,7 +146,7 @@ export async function PATCH(request: Request) {
       return jsonError("Request status changed. Refresh and try again.", 409);
     }
     return Response.json(
-      { ok: true, status: body.status },
+      { ok: true, status: nextStatus },
       { headers: { "cache-control": "private, no-store" } },
     );
   } catch (error) {

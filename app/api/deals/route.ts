@@ -2,6 +2,7 @@ import { desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { dealItems, deals } from "@/db/schema";
 import { requireUser, routeError } from "@/lib/server/auth";
+import { decodePaymentNote } from "@/lib/server/payment-details";
 
 export const runtime = "nodejs";
 
@@ -39,7 +40,17 @@ export async function GET(request: Request) {
       .orderBy(desc(deals.dealDate), desc(deals.createdAt))
       .limit(200);
 
-    return Response.json({ deals: rows }, { headers: PRIVATE_NO_STORE });
+    return Response.json({
+      deals: rows.map((row) => {
+        const payment = decodePaymentNote(row.note);
+        return {
+          ...row,
+          note: payment.note,
+          payment_method: payment.paymentMethod,
+          payment_details: payment.paymentDetails,
+        };
+      }),
+    }, { headers: PRIVATE_NO_STORE });
   } catch (error) {
     return routeError(error);
   }

@@ -2,6 +2,12 @@ import { desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { dealItems, deals, users } from "@/db/schema";
 import { requireAdmin, routeError } from "@/lib/server/auth";
+import {
+  decodePaymentNote,
+  encodePaymentNote,
+  isPaymentMethod,
+  validatePaymentDetails,
+} from "@/lib/server/payment-details";
 import { jsonError, sameOrigin } from "@/lib/server/storage";
 
 export const runtime = "nodejs";
@@ -144,7 +150,17 @@ export async function GET(request: Request) {
       .orderBy(desc(deals.dealDate), desc(deals.createdAt))
       .limit(300);
 
-    return responseJson({ deals: rows });
+    return responseJson({
+      deals: rows.map((row) => {
+        const payment = decodePaymentNote(row.note);
+        return {
+          ...row,
+          note: payment.note,
+          payment_method: payment.paymentMethod,
+          payment_details: payment.paymentDetails,
+        };
+      }),
+    });
   } catch (error) {
     return routeError(error);
   }
@@ -175,6 +191,17 @@ export async function POST(request: Request) {
     const note = optionalText(body.note, 500);
     if (note === null) return jsonError("Note must contain at most 500 characters");
 
+    const paymentMethod = body.paymentMethod === "" || body.paymentMethod === null
+      || body.paymentMethod === undefined
+      ? null
+      : isPaymentMethod(body.paymentMethod) ? body.paymentMethod : undefined;
+    if (paymentMethod === undefined) return jsonError("Payment method must be Kaspi Bank card");
+    const paymentDetails = validatePaymentDetails(body.paymentDetails);
+    if (!paymentDetails.ok) return jsonError(paymentDetails.error);
+    if (paymentDetails.value && !paymentMethod) {
+      return jsonError("Select a payment method before adding payout details");
+    }
+
     const items = parseItems(body.items);
     if (!items) return jsonError("Items must contain at most 50 valid entries with quantity 1-99 and non-negative prices");
 
@@ -196,7 +223,7 @@ export async function POST(request: Request) {
         currency: selectedCurrency,
         status: selectedStatus,
         source: "manual",
-        note,
+        note: encodePaymentNote(note, paymentMethod, paymentDetails.value),
         createdBy: admin.id,
         createdAt: now,
       });

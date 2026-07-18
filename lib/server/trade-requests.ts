@@ -1,4 +1,5 @@
 import type { SaleItemSnapshot } from "@/db/schema";
+import { decodePaymentNote } from "./payment-details";
 
 export const MAX_SALE_REQUEST_ITEMS = 20;
 export const SUPPORTED_SALE_CURRENCIES = ["USD", "EUR", "RUB"] as const;
@@ -21,6 +22,8 @@ export type TradeRequestRow = {
   currency: string;
   status: string;
   note: string;
+  payment_method: "kaspi_card" | null;
+  payment_details: string;
   created_at: string;
   updated_at: string;
   login?: string | null;
@@ -96,6 +99,7 @@ export type TradeRequestItemRecord = {
 };
 
 export function serializeTradeRequest(record: TradeRequestRecord): TradeRequestRow {
+  const payment = decodePaymentNote(record.note);
   return {
     id: record.id,
     user_id: record.userId,
@@ -104,7 +108,9 @@ export function serializeTradeRequest(record: TradeRequestRecord): TradeRequestR
     amount_cents: record.amountCents,
     currency: record.currency,
     status: record.status,
-    note: record.note,
+    note: payment.note,
+    payment_method: payment.paymentMethod,
+    payment_details: payment.paymentDetails,
     created_at: record.createdAt,
     updated_at: record.updatedAt,
     ...(record.login === undefined ? {} : { login: record.login }),

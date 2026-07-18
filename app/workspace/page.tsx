@@ -71,9 +71,9 @@ type CatalogResponse = {
   catalog: { source: "upstream" | "last-known-good" | "bundled-fallback"; fetchedAt: string; stale: boolean; errorCode?: string };
   pricing: { source: "Skinport"; status: "available" | "partial" | "unavailable" | "temporarily_unavailable"; currency: string | null; updatedAt: string | null; cache: "hit" | "miss" | "stale"; configured: boolean };
 };
-type Deal = { id: string; deal_date: string; amount_cents: number; currency: string; status: string; source: string; note: string; items: string | null; item_count: number };
+type Deal = { id: string; deal_date: string; amount_cents: number; currency: string; status: string; source: string; note: string; items: string | null; item_count: number; payment_method: "kaspi_card" | null; payment_details: string };
 type RequestItem = { id: string; asset_id: string; name: string; quantity: number; icon_url: string | null; rarity?: string | null; wear?: string | null };
-type TradeRequest = { id: string; steam_id: string; amount_cents: number; currency: string; status: string; note: string; created_at: string; updated_at: string; items: RequestItem[] };
+type TradeRequest = { id: string; steam_id: string; amount_cents: number; currency: string; status: string; note: string; payment_method: "kaspi_card" | null; payment_details: string; created_at: string; updated_at: string; items: RequestItem[] };
 type CatalogFilters = { q: string; itemType: string; weaponCategory: string; weapon: string; rarity: string; wear: string; sort: string; onlyWithPrices: boolean; page: number };
 
 const DEFAULT_FILTERS: CatalogFilters = { q: "", itemType: "", weaponCategory: "", weapon: "", rarity: "", wear: "", sort: "default", onlyWithPrices: true, page: 1 };
@@ -126,7 +126,7 @@ export default function WorkspacePage() {
   const [inventoryError, setInventoryError] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [section, setSection] = useState<"inventory" | "requests" | "history">("inventory");
+  const [section, setSection] = useState<"inventory" | "requests" | "history" | "profile">("inventory");
   const [inventoryView, setInventoryView] = useState<"mine" | "catalog">("mine");
   const [inventoryQuery, setInventoryQuery] = useState("");
   const [inventoryFilter, setInventoryFilter] = useState("all");
@@ -281,13 +281,16 @@ export default function WorkspacePage() {
           <button className={section === "inventory" ? "active" : ""} onClick={() => setSection("inventory")}>Inventory</button>
           <button className={section === "requests" ? "active" : ""} onClick={() => setSection("requests")}>Sale requests <span>{activeRequests}</span></button>
           <button className={section === "history" ? "active" : ""} onClick={() => setSection("history")}>Deal history <span>{deals.length}</span></button>
+          <button className={section === "profile" ? "active" : ""} onClick={() => setSection("profile")}>Profile</button>
         </nav>
         <div className="accountMenu">
           {user?.role === "admin" && <a className="adminShortcut" href="/admin">Admin</a>}
-          {steamAvatar
-            ? <SafeImage className="accountAvatar" source={steamAvatar} alt={`${accountName} Steam avatar`} />
-            : <div className="avatar">{accountName.slice(0, 1).toUpperCase()}</div>}
-          <div className="accountIdentity"><strong>{accountName}</strong><small>{steamId ? "Steam connected" : `@${user?.login}`}</small></div>
+          <button className="accountProfileButton" onClick={() => setSection("profile")} aria-label="Open profile">
+            {steamAvatar
+              ? <SafeImage className="accountAvatar" source={steamAvatar} alt={`${accountName} Steam avatar`} />
+              : <span className="avatar">{accountName.slice(0, 1).toUpperCase()}</span>}
+            <span className="accountIdentity"><strong>{accountName}</strong><small>{steamId ? "Steam connected" : `@${user?.login}`}</small></span>
+          </button>
           <button onClick={logout} aria-label="Sign out">↗</button>
         </div>
       </header>
@@ -332,18 +335,40 @@ export default function WorkspacePage() {
       ) : section === "requests" ? (
         <section className="requestsPage">
           <div className="requestsHeading"><div><p>CLIENT REQUESTS</p><h1>Sale requests</h1><span>Submit verified owned assets and a desired amount. No trade or payment is created automatically.</span></div><button className="requestSaleButton" disabled={!connected || !selected.size} onClick={() => setShowRequestForm(true)}>{connected ? selected.size ? `Request sale of ${selected.size}` : "Select items in My Inventory" : "Connect Steam first"}</button></div>
-          <div className="requestList">{requests.length ? requests.map((request) => <article className="requestCard" key={request.id}><div className="requestCardTop"><div><span>REQUEST #{request.id.slice(0, 8)}</span><strong>{currencyAmount(request.amount_cents, request.currency)}</strong></div><b className={`statusTag ${request.status}`}>{request.status}</b></div><div className="requestItems">{request.items.map((item) => <div key={item.id}>{item.icon_url ? <SafeImage source={item.icon_url} alt={item.name} /> : <span>CS2</span>}<p><strong>{item.name}</strong><small>Asset {item.asset_id}{item.wear ? ` · ${item.wear}` : ""}</small></p></div>)}</div>{request.note && <p className="requestNote">{request.note}</p>}<footer><span>Created {new Date(request.created_at).toLocaleString()}</span><span>Updated {new Date(request.updated_at).toLocaleString()}</span><a href={`https://steamcommunity.com/profiles/${request.steam_id}`} target="_blank" rel="noreferrer">Steam profile ↗</a>{request.status === "pending" && <button onClick={() => cancelRequest(request.id)}>Cancel request</button>}</footer></article>) : <div className="emptyRequests"><span>◎</span><h2>No sale requests yet</h2><p>Select verified assets in My Inventory to begin.</p></div>}</div>
+          <div className="requestList">{requests.length ? requests.map((request) => <article className="requestCard" key={request.id}><div className="requestCardTop"><div><span>REQUEST #{request.id.slice(0, 8)}</span><strong>{currencyAmount(request.amount_cents, request.currency)}</strong></div><b className={`statusTag ${request.status}`}>{request.status}</b></div><div className="requestItems">{request.items.map((item) => <div key={item.id}>{item.icon_url ? <SafeImage source={item.icon_url} alt={item.name} /> : <span>CS2</span>}<p><strong>{item.name}</strong><small>Asset {item.asset_id}{item.wear ? ` · ${item.wear}` : ""}</small></p></div>)}</div>{request.note && <p className="requestNote">{request.note}</p>}{request.payment_method === "kaspi_card" && <div className="payoutSummary"><span>PAYMENT METHOD</span><strong>Card · Kaspi Bank</strong><small>{request.payment_details || "Payout reference will be confirmed by the administrator."}</small></div>}<footer><span>Created {new Date(request.created_at).toLocaleString()}</span><span>Updated {new Date(request.updated_at).toLocaleString()}</span><a href={`https://steamcommunity.com/profiles/${request.steam_id}`} target="_blank" rel="noreferrer">Steam profile ↗</a>{request.status === "pending" && <button onClick={() => cancelRequest(request.id)}>Cancel request</button>}</footer></article>) : <div className="emptyRequests"><span>◎</span><h2>No sale requests yet</h2><p>Select verified assets in My Inventory to begin.</p></div>}</div>
         </section>
-      ) : (
+      ) : section === "history" ? (
         <section className="historyPage">
           <div className="historyHeading"><div><p>ACCOUNT RECORDS</p><h1>Deal history</h1><span>Manual records created by the administrator. They do not represent payments made by this application.</span></div><div className="historyTotal"><small>RECORDED TOTALS</small>{Object.entries(totalsByCurrency).map(([currency, amount]) => <strong key={currency}>{currency} {(amount / 100).toFixed(2)}</strong>)}</div></div>
-          <div className="dealTable"><div className="dealRow dealHead"><span>Date</span><span>Items</span><span>Source</span><span>Status</span><span>Amount</span></div>{deals.length ? deals.map((deal) => <div className="dealRow" key={deal.id}><span><strong>{new Date(deal.deal_date).toLocaleDateString("en-GB")}</strong><small>#{deal.id.slice(0, 8)}</small></span><span><strong>{deal.items || "Recorded deal"}</strong><small>{deal.item_count} item(s)</small></span><span><b className="sourceTag">{deal.source}</b></span><span><b className={`statusTag ${deal.status}`}>{deal.status}</b></span><span className="dealAmount">{deal.currency} {(deal.amount_cents / 100).toFixed(2)}</span></div>) : <div className="emptyDeals"><span>◎</span><h2>No recorded deals yet</h2><p>An administrator can add past or off-platform deals.</p></div>}</div>
+          <div className="dealTable"><div className="dealRow dealHead"><span>Date</span><span>Items</span><span>Source</span><span>Status</span><span>Amount</span></div>{deals.length ? deals.map((deal) => <div className="dealRow" key={deal.id}><span><strong>{new Date(deal.deal_date).toLocaleDateString("en-GB")}</strong><small>#{deal.id.slice(0, 8)}</small></span><span><strong>{deal.items || "Recorded deal"}</strong><small>{deal.payment_method === "kaspi_card" ? `Kaspi Bank${deal.payment_details ? ` · ${deal.payment_details}` : ""}` : `${deal.item_count} item(s)`}</small></span><span><b className="sourceTag">{deal.source}</b></span><span><b className={`statusTag ${deal.status}`}>{deal.status}</b></span><span className="dealAmount">{deal.currency} {(deal.amount_cents / 100).toFixed(2)}</span></div>) : <div className="emptyDeals"><span>◎</span><h2>No recorded deals yet</h2><p>An administrator can add past or off-platform deals.</p></div>}</div>
         </section>
+      ) : (
+        <ProfileSection user={user} accountName={accountName} steamId={steamId} steamAvatar={steamAvatar} deals={deals} requests={requests} />
       )}
 
       {showRequestForm && <div className="modalBackdrop"><form className="adminModal wideModal saleRequestModal" onSubmit={submitRequest}><button className="modalClose" type="button" aria-label="Close sale request form" onClick={() => setShowRequestForm(false)}>×</button><span>SALE REQUEST</span><h2>Request a manual sale review</h2><p>The administrator receives immutable snapshots of the selected owned assets and your desired amount. This action creates no Steam trade or payment.</p><div className="selectedRequestItems"><strong>{selected.size} verified inventory item(s)</strong><div>{items.filter((item) => selected.has(item.id)).map((item) => <span key={item.id}>{item.name}</span>)}</div></div><div className="formGrid"><label>Desired amount<input required inputMode="decimal" value={requestForm.amount} onChange={(event) => setRequestForm({ ...requestForm, amount: event.target.value })} placeholder="0.00" /></label><label>Currency<select value={requestForm.currency} onChange={(event) => setRequestForm({ ...requestForm, currency: event.target.value })}><option>USD</option><option>EUR</option><option>RUB</option></select></label></div><label>Optional note<textarea className="shortArea" maxLength={600} value={requestForm.note} onChange={(event) => setRequestForm({ ...requestForm, note: event.target.value })} placeholder="Condition, preferred contact time, or other details" /></label>{requestError && <div className="formError" role="alert">{requestError}</div>}<button className="modalSubmit" disabled={requestSubmitting || !selected.size}>{requestSubmitting ? "Sending request…" : "Send sale request"}<b>→</b></button></form></div>}
     </main>
   );
+}
+
+function ProfileSection({ user, accountName, steamId, steamAvatar, deals, requests }: { user: User | null; accountName: string; steamId: string | null; steamAvatar: string | null; deals: Deal[]; requests: TradeRequest[] }) {
+  const payoutRecords = [
+    ...requests.filter((request) => request.payment_method).map((request) => ({
+      id: request.id,
+      title: `Sale request #${request.id.slice(0, 8)}`,
+      details: request.payment_details,
+      amount: currencyAmount(request.amount_cents, request.currency),
+      status: request.status,
+    })),
+    ...deals.filter((deal) => deal.payment_method).map((deal) => ({
+      id: deal.id,
+      title: `Recorded deal #${deal.id.slice(0, 8)}`,
+      details: deal.payment_details,
+      amount: currencyAmount(deal.amount_cents, deal.currency),
+      status: deal.status,
+    })),
+  ];
+  return <section className="profilePage"><div className="profileHeading"><p>ACCOUNT</p><h1>Profile</h1><span>Review your connected identity and available payout methods.</span></div><div className="profileGrid"><article className="profileIdentityCard">{steamAvatar ? <SafeImage source={steamAvatar} alt={`${accountName} Steam avatar`} /> : <span>{accountName.slice(0, 1).toUpperCase()}</span>}<div><small>CLIENT PROFILE</small><h2>{accountName}</h2><p>@{user?.login || "user"}</p>{steamId && <b>Steam {steamId}</b>}</div></article><article className="profileSafetyCard"><span>✓</span><div><strong>Payment reference only</strong><p>contras.fun records payout instructions for manual review. It never charges a card or asks for a CVV, PIN, expiry date, or full card number.</p></div></article></div><div className="paymentSection"><div className="profileSectionTitle"><div><span>PAYOUT OPTIONS</span><h2>Payment methods</h2></div><p>The administrator confirms the final payout details inside a sale request or recorded deal.</p></div><div className="paymentMethodGrid"><article className="paymentMethodCard active"><span className="paymentMethodIcon">▣</span><div><small>CARD</small><h3>Kaspi Bank</h3><p>Recipient name, Kaspi phone, or last four card digits.</p></div><b>AVAILABLE</b></article><article className="paymentMethodCard"><span className="paymentMethodIcon">↔</span><div><small>BANK</small><h3>Bank transfer</h3><p>Additional bank payout options are being prepared.</p></div><b>COMING SOON</b></article><article className="paymentMethodCard"><span className="paymentMethodIcon">◇</span><div><small>WALLET</small><h3>Digital wallet</h3><p>Alternative payout methods will appear here later.</p></div><b>COMING SOON</b></article></div></div><div className="profilePayouts"><div className="profileSectionTitle"><div><span>PAYMENT REFERENCES</span><h2>Request and deal details</h2></div></div>{payoutRecords.length ? <div className="profilePayoutList">{payoutRecords.map((record) => <article key={`${record.title}-${record.id}`}><div><strong>{record.title}</strong><small>{record.details || "The administrator has selected Kaspi Bank; payout reference is pending."}</small></div><span>{record.amount}</span><b className={`statusTag ${record.status}`}>{record.status}</b></article>)}</div> : <div className="emptyProfilePayouts"><span>◎</span><div><strong>No payout references yet</strong><p>They will appear after an administrator adds details to a request or manual deal.</p></div></div>}</div></section>;
 }
 
 function CatalogFiltersPanel({ filters, facets, update }: { filters: CatalogFilters; facets: CatalogResponse["facets"]; update: <Key extends keyof CatalogFilters>(key: Key, value: CatalogFilters[Key]) => void }) {

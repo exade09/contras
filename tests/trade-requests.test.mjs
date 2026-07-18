@@ -9,6 +9,7 @@ import {
   selectVerifiedOwnedAssets,
   validateOwnedAssetIds,
 } from "../lib/server/trade-requests.ts";
+import { encodePaymentNote } from "../lib/server/payment-details.ts";
 
 test("desired amounts parse to integer cents without floating-point conversion", () => {
   assert.equal(parseDesiredAmountCents("1"), 100);
@@ -89,4 +90,16 @@ test("administrator request payload includes the verified Steam profile, asset I
   assert.equal(item.app_id, 730);
   assert.equal(item.context_id, "2");
   assert.deepEqual(item.snapshot, snapshot);
+});
+
+test("request serialization exposes payment fields separately from the client note", () => {
+  const request = serializeTradeRequest({
+    id: "request-payment", userId: "user-1", steamId: "76561198000000000",
+    amountCents: 10_000, currency: "USD", status: "accepted",
+    note: encodePaymentNote("Call after 18:00", "kaspi_card", "Recipient · phone ending 0000"),
+    createdAt: "2026-07-18T12:00:00.000Z", updatedAt: "2026-07-18T12:01:00.000Z",
+  });
+  assert.equal(request.note, "Call after 18:00");
+  assert.equal(request.payment_method, "kaspi_card");
+  assert.equal(request.payment_details, "Recipient · phone ending 0000");
 });
