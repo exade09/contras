@@ -39,3 +39,16 @@ test("legacy Steam IDs remain migration data and cannot authorize application se
   assert.doesNotMatch(sessionProjection, /users\.steamId|legacySteamId/);
   assert.match(sessionProjection, /steamId: steamLinks\.steamId/);
 });
+
+test("administrator user deletion is origin-protected, forbids self-deletion, and clears owned records", async () => {
+  const adminUsersRoute = await readFile("app/api/admin/users/route.ts", "utf8");
+  const deleteHandler = adminUsersRoute.slice(adminUsersRoute.indexOf("export async function DELETE"));
+  assert.match(deleteHandler, /sameOrigin\(request\)/);
+  assert.match(deleteHandler, /const admin = await requireAdmin\(request\)/);
+  assert.match(deleteHandler, /id === admin\.id/);
+  assert.match(deleteHandler, /delete\(tradeRequests\)/);
+  assert.match(deleteHandler, /delete\(deals\)/);
+  assert.match(deleteHandler, /createdBy: admin\.id/);
+  assert.match(deleteHandler, /delete\(loginEvents\)/);
+  assert.match(deleteHandler, /delete\(users\)/);
+});

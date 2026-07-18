@@ -23,6 +23,7 @@ function requestStatusOptions(status: string) {
 
 export default function AdminPage() {
   const [users, setUsers] = useState<User[]>([]); const [deals, setDeals] = useState<Deal[]>([]); const [requests, setRequests] = useState<TradeRequest[]>([]); const [loading, setLoading] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState("");
   const [view, setView] = useState<"overview" | "users" | "requests" | "deals">("overview"); const [notice, setNotice] = useState(""); const [error, setError] = useState("");
   const [showUserForm, setShowUserForm] = useState(false); const [showDealForm, setShowDealForm] = useState(false);
   const [userForm, setUserForm] = useState({ login: "", displayName: "", password: "", role: "user" });
@@ -30,7 +31,7 @@ export default function AdminPage() {
 
   async function load() {
     const me = await fetch("/api/auth/me"); if (!me.ok) { window.location.href = "/"; return; }
-    const meData = await me.json(); if (meData.user.role !== "admin") { window.location.href = "/workspace"; return; }
+    const meData = await me.json(); if (meData.user.role !== "admin") { window.location.href = "/workspace"; return; } setCurrentUserId(meData.user.id);
     const [userResponse, dealResponse, requestResponse] = await Promise.all([fetch("/api/admin/users"), fetch("/api/admin/deals"), fetch("/api/admin/trade-requests", { cache: "no-store" })]);
     if (!userResponse.ok || !dealResponse.ok || !requestResponse.ok) {
       setError("The admin data could not be loaded. Please refresh the page.");
@@ -51,6 +52,15 @@ export default function AdminPage() {
   async function toggleUser(user: User) {
     const status = user.status === "active" ? "blocked" : "active"; const response = await fetch("/api/admin/users", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: user.id, status }) });
     if (response.ok) { flash(status === "active" ? "User activated" : "User blocked"); await load(); }
+  }
+  async function deleteUser(user: User) {
+    const confirmation = window.prompt(`Permanently delete @${user.login} and all of this user's requests and deals? Type ${user.login} to confirm.`);
+    if (confirmation !== user.login) return;
+    setError("");
+    const response = await fetch("/api/admin/users", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: user.id }) });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) { setError(body.error || "Could not delete user"); return; }
+    flash("User permanently deleted"); await load();
   }
   async function createDeal(event: FormEvent) {
     event.preventDefault(); setError(""); const items = dealForm.items.split("\n").map((name) => ({ name: name.trim(), quantity: 1 })).filter((item) => item.name);
@@ -85,7 +95,7 @@ export default function AdminPage() {
         <section className="adminPanel"><div className="panelTitle"><div><span>RECENT ACTIVITY</span><h2>Latest recorded deals</h2></div><button onClick={() => setView("deals")}>View all</button></div><DealsTable deals={deals.slice(0,6)} onDelete={deleteDeal} /></section>
       </>}
       {view === "users" && <section className="adminPanel mainPanel"><div className="panelTitle"><div><span>CLIENT ACCESS</span><h2>Users and credentials</h2><p>Create accounts yourself. Existing passwords are never visible and can only be replaced.</p></div><button className="primaryAdminButton" onClick={() => setShowUserForm(true)}>＋ New user</button></div>
-        <div className="userTable"><div className="userRow tableHead"><span>User</span><span>Steam</span><span>Deals</span><span>Last sign in</span><span>Status</span><span /></div>{users.map((user) => <div className="userRow" key={user.id}><span><i>{user.display_name.slice(0,1).toUpperCase()}</i><div><strong>{user.display_name}</strong><small>@{user.login} · {user.role}</small></div></span><span>{user.steam_id ? <a className="connectedTag" href={`https://steamcommunity.com/profiles/${user.steam_id}`} target="_blank" rel="noreferrer">Connected</a> : <b className="notConnectedTag">Not connected</b>}</span><span><strong>{user.deal_count}</strong><small>recorded deals</small></span><span><strong>{user.last_login_at ? new Date(user.last_login_at).toLocaleDateString() : "Never"}</strong></span><span><b className={`statusTag ${user.status}`}>{user.status}</b></span><span><button className="rowAction" onClick={() => toggleUser(user)}>{user.status === "active" ? "Block" : "Activate"}</button></span></div>)}</div>
+        <div className="userTable"><div className="userRow tableHead"><span>User</span><span>Steam</span><span>Deals</span><span>Last sign in</span><span>Status</span><span /></div>{users.map((user) => <div className="userRow" key={user.id}><span><i>{user.display_name.slice(0,1).toUpperCase()}</i><div><strong>{user.display_name}</strong><small>@{user.login} · {user.role}</small></div></span><span>{user.steam_id ? <a className="connectedTag" href={`https://steamcommunity.com/profiles/${user.steam_id}`} target="_blank" rel="noreferrer"><strong>Connected</strong><small>{user.steam_id}</small></a> : <b className="notConnectedTag">Not connected</b>}</span><span><strong>{user.deal_count}</strong><small>recorded deals</small></span><span><strong>{user.last_login_at ? new Date(user.last_login_at).toLocaleDateString() : "Never"}</strong></span><span><b className={`statusTag ${user.status}`}>{user.status}</b></span><span className="userActions"><button className="rowAction" onClick={() => toggleUser(user)}>{user.status === "active" ? "Block" : "Activate"}</button><button className="rowAction danger" disabled={user.id === currentUserId} title={user.id === currentUserId ? "You cannot delete your current account" : `Delete @${user.login}`} onClick={() => deleteUser(user)}>Delete</button></span></div>)}</div>
       </section>}
       {view === "requests" && <section className="adminPanel mainPanel"><div className="panelTitle"><div><span>CLIENT INTENT</span><h2>Incoming sale requests</h2><p>Review owned asset snapshots, desired amount and the verified Steam profile before contacting the client.</p></div></div><div className="adminRequestList">{requests.length ? requests.map((request) => <article className="adminRequestCard" key={request.id}><div className="adminRequestHeader"><div><span>#{request.id.slice(0,8)} · Created {new Date(request.created_at).toLocaleString()} · Updated {new Date(request.updated_at).toLocaleString()}</span><h3>{request.display_name || "Client"} <small>@{request.login || request.user_id}</small></h3></div><strong>{request.currency} {(request.amount_cents / 100).toFixed(2)}</strong><b className={`statusTag ${request.status}`}>{request.status}</b></div><div className="adminRequestItems">{request.items.map((item) => <div key={item.id}>{item.icon_url ? <img src={item.icon_url} alt={item.name} loading="lazy" referrerPolicy="no-referrer" /> : <span>CS2</span>}<p>{item.name}<small>Asset {item.asset_id}{item.wear ? ` · ${item.wear}` : ""}{item.rarity ? ` · ${item.rarity}` : ""}</small></p></div>)}</div>{request.note && <p className="adminRequestNote">{request.note}</p>}<RequestPaymentEditor request={request} onSave={saveRequestPayment} /><footer><a href={`https://steamcommunity.com/profiles/${request.steam_id}`} target="_blank" rel="noreferrer">Open Steam profile ↗</a><select aria-label={`Update request ${request.id} status`} value={request.status} disabled={!requestTransitions[request.status]?.length} onChange={(event) => updateRequest(request.id, event.target.value)}>{requestStatusOptions(request.status).map((status) => <option key={status} value={status}>{status.slice(0, 1).toUpperCase() + status.slice(1)}</option>)}</select></footer></article>) : <div className="emptyAdmin"><span>◎</span><p>No sale requests yet.</p></div>}</div></section>}
       {view === "deals" && <section className="adminPanel mainPanel"><div className="panelTitle"><div><span>HISTORY MANAGEMENT</span><h2>Manually recorded deals</h2><p>Add old and off-platform transactions to the selected client&apos;s history.</p></div><button className="primaryAdminButton" onClick={() => setShowDealForm(true)}>＋ Add deal</button></div><DealsTable deals={deals} onDelete={deleteDeal} /></section>}

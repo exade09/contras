@@ -1,7 +1,8 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { deals, sessions, steamLinks, users } from "@/db/schema";
+import { deals, loginEvents, sessions, steamLinks, tradeRequests, users } from "@/db/schema";
 import { hashPassword, requireAdmin, routeError } from "@/lib/server/auth";
+import { clearSteamInventoryCache } from "@/lib/server/steam-inventory";
 import { jsonError, sameOrigin } from "@/lib/server/storage";
 
 export const runtime = "nodejs";
@@ -211,6 +212,47 @@ export async function PATCH(request: Request) {
 
     if (!updated) return jsonError("User not found", 404);
     return responseJson({ ok: true });
+  } catch (error) {
+    return routeError(error);
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    if (!sameOrigin(request)) return jsonError("Invalid request origin", 403);
+    const admin = await requireAdmin(request);
+    const body = await jsonBody(request);
+    if (!isRecord(body)) return jsonError("A valid JSON request body is required", 400);
+
+    const id = requiredText(body.id, 64);
+    if (!id) return jsonError("User id is required");
+    if (id === admin.id) return jsonError("You cannot delete your current administrator account", 409);
+
+    const db = getDb();
+    const targetRows = await db
+      .select({
+        id: users.id,
+        login: users.login,
+        legacySteamId: users.steamId,
+        linkedSteamId: steamLinks.steamId,
+      })
+      .from(users)
+      .leftJoin(steamLinks, eq(steamLinks.userId, users.id))
+      .where(eq(users.id, id))
+      .limit(1);
+    const target = targetRows[0];
+    if (!target) return jsonError("User not found", 404);
+
+    await db.transaction(async (transaction) => {
+      await transaction.delete(tradeRequests).where(eq(tradeRequests.userId, id));
+      await transaction.delete(deals).where(eq(deals.userId, id));
+      await transaction.update(deals).set({ createdBy: admin.id }).where(eq(deals.createdBy, id));
+      await transaction.delete(loginEvents).where(eq(loginEvents.login, target.login));
+      await transaction.delete(users).where(eq(users.id, id));
+    });
+
+    clearSteamInventoryCache(target.linkedSteamId || target.legacySteamId || undefined);
+    return responseJson({ ok: true, deleted_user_id: id });
   } catch (error) {
     return routeError(error);
   }
