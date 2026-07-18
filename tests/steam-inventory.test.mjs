@@ -75,6 +75,32 @@ test("Steam 429 is not retried repeatedly from the same server IP", async () => 
   assert.equal(calls, 1);
 });
 
+test("inventory fallback reports missing and rejected server configuration safely", async (t) => {
+  await t.test("missing Production variable", async () => {
+    const loader = createSteamInventoryLoader({
+      maxRetries: 0,
+      fetchImpl: createResilientSteamInventoryFetch(undefined, async () =>
+        new Response("rate limited", { status: 429 })),
+    });
+    const result = await loader.load(STEAM_ID);
+    assert.equal(result.fallbackIssue, "not_configured");
+    assert.match(result.error?.message || "", /not available in the Production deployment/);
+  });
+
+  await t.test("provider rejects key", async () => {
+    const loader = createSteamInventoryLoader({
+      maxRetries: 0,
+      fetchImpl: createResilientSteamInventoryFetch("invalid-key", async (input) =>
+        new URL(input).origin === "https://steamcommunity.com"
+          ? new Response("rate limited", { status: 429 })
+          : new Response("forbidden", { status: 403 })),
+    });
+    const result = await loader.load(STEAM_ID);
+    assert.equal(result.fallbackIssue, "key_rejected");
+    assert.match(result.error?.message || "", /rejected STEAMAPIS_API_KEY/);
+  });
+});
+
 test("multi-page assets merge with classid+instanceid descriptions and catalog metadata", async () => {
   const requested = [];
   const loader = createSteamInventoryLoader({

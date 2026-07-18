@@ -31,6 +31,14 @@ export type SteamInventoryState =
   | "malformed"
   | "unavailable";
 
+export type SteamInventoryFallbackIssue =
+  | "not_configured"
+  | "key_rejected"
+  | "account_or_quota"
+  | "provider_rate_limited"
+  | "provider_unavailable"
+  | "invalid_response";
+
 export type SteamInventoryErrorCode = Exclude<
   SteamInventoryState,
   "disconnected" | "success" | "empty"
@@ -105,6 +113,7 @@ export type SteamInventoryResult = {
   cache: "miss" | "hit" | "coalesced" | "bypass";
   error?: SteamInventoryError;
   retryAfterSeconds?: number;
+  fallbackIssue?: SteamInventoryFallbackIssue;
 };
 
 export type SteamInventoryCatalogIndex =
@@ -178,13 +187,39 @@ type ValidatedPage = {
 type PageResult =
   | { kind: "page"; page: ValidatedPage }
   | { kind: "private" }
-  | { kind: "rate_limited"; retryAfterSeconds?: number }
+  | { kind: "rate_limited"; retryAfterSeconds?: number; fallbackIssue?: SteamInventoryFallbackIssue }
   | { kind: "timeout" }
   | { kind: "malformed" }
   | { kind: "unavailable" };
 
 type CoreResult = Omit<SteamInventoryResult, "cache">;
 type CachedResult = { expiresAt: number; result: CoreResult };
+
+const FALLBACK_ISSUES = new Set<SteamInventoryFallbackIssue>([
+  "not_configured",
+  "key_rejected",
+  "account_or_quota",
+  "provider_rate_limited",
+  "provider_unavailable",
+  "invalid_response",
+]);
+
+function fallbackIssueResponse(primary: Response, issue: SteamInventoryFallbackIssue) {
+  const headers = new Headers(primary.headers);
+  headers.set("x-contras-inventory-fallback", issue);
+  return new Response(primary.body, {
+    status: primary.status,
+    statusText: primary.statusText,
+    headers,
+  });
+}
+
+function fallbackIssue(response: Response) {
+  const value = response.headers.get("x-contras-inventory-fallback");
+  return value && FALLBACK_ISSUES.has(value as SteamInventoryFallbackIssue)
+    ? value as SteamInventoryFallbackIssue
+    : undefined;
+}
 
 export function createResilientSteamInventoryFetch(
   apiKey: string | null | undefined,
@@ -193,7 +228,8 @@ export function createResilientSteamInventoryFetch(
   const fallbackKey = apiKey?.trim();
   return async (input, init) => {
     const primary = await fetchImpl(input, init);
-    if (primary.status !== 429 || !fallbackKey) return primary;
+    if (primary.status !== 429) return primary;
+    if (!fallbackKey) return fallbackIssueResponse(primary, "not_configured");
 
     let steamId64: string | null = null;
     try {
@@ -221,25 +257,36 @@ export function createResilientSteamInventoryFetch(
         redirect: "error",
         signal: init?.signal,
       });
-      if (!fallback.ok) return primary;
+      if (!fallback.ok) {
+        const issue = fallback.status === 401 || fallback.status === 403
+          ? "key_rejected"
+          : fallback.status === 400
+            ? "account_or_quota"
+            : fallback.status === 429
+              ? "provider_rate_limited"
+              : "provider_unavailable";
+        return fallbackIssueResponse(primary, issue);
+      }
       const declaredLength = Number(fallback.headers.get("content-length"));
       if (Number.isFinite(declaredLength) && declaredLength > DEFAULT_MAX_RESPONSE_BYTES) {
-        return primary;
+        return fallbackIssueResponse(primary, "invalid_response");
       }
       const body = await fallback.text();
-      if (body.length > DEFAULT_MAX_RESPONSE_BYTES) return primary;
+      if (body.length > DEFAULT_MAX_RESPONSE_BYTES) {
+        return fallbackIssueResponse(primary, "invalid_response");
+      }
       const payload = JSON.parse(body) as unknown;
       if (!isRecord(payload) || payload.success !== true) {
-        return primary;
+        return fallbackIssueResponse(primary, "invalid_response");
       }
       const result = isRecord(payload.result)
         ? payload.result
         : isRecord(payload.response)
           ? payload.response
           : null;
-      if (!result) return primary;
+      if (!result) return fallbackIssueResponse(primary, "invalid_response");
       if (!Array.isArray(result.assets) || !Array.isArray(result.descriptions)) {
-        return primary;
+        return fallbackIssueResponse(primary, "invalid_response");
       }
       return Response.json({
         ...result,
@@ -250,7 +297,7 @@ export function createResilientSteamInventoryFetch(
         headers: { "x-contras-inventory-source": "steamapis-fallback" },
       });
     } catch {
-      return primary;
+      return fallbackIssueResponse(primary, "provider_unavailable");
     }
   };
 }
@@ -290,11 +337,49 @@ function optionalFlag(value: unknown) {
   return { valid: false, value: false } as const;
 }
 
-function inventoryError(code: SteamInventoryErrorCode): SteamInventoryError {
+function inventoryError(
+  code: SteamInventoryErrorCode,
+  fallback?: SteamInventoryFallbackIssue,
+): SteamInventoryError {
   switch (code) {
     case "private":
       return { code, message: "Steam inventory is private.", retryable: false };
     case "rate_limited":
+      if (fallback === "not_configured") {
+        return {
+          code,
+          message: "Steam rate-limited this server, and STEAMAPIS_API_KEY is not available in the Production deployment.",
+          retryable: true,
+        };
+      }
+      if (fallback === "key_rejected") {
+        return {
+          code,
+          message: "SteamApis rejected STEAMAPIS_API_KEY. Verify the key, Production scope, and redeploy.",
+          retryable: true,
+        };
+      }
+      if (fallback === "account_or_quota") {
+        return {
+          code,
+          message: "SteamApis fallback is not active or has no available request quota. Check Payment & subscriptions in SteamApis.",
+          retryable: true,
+        };
+      }
+      if (fallback === "provider_rate_limited") {
+        return {
+          code,
+          message: "Both Steam and the SteamApis fallback are temporarily rate-limited.",
+          retryable: true,
+        };
+      }
+      if (fallback === "provider_unavailable" || fallback === "invalid_response") {
+        return {
+          code,
+          message: "Steam is rate-limited and the SteamApis fallback returned no usable inventory.",
+          retryable: true,
+        };
+      }
       return {
         code,
         message: "Steam temporarily rate-limited inventory requests.",
@@ -327,6 +412,7 @@ function errorResult(
   fetchedAt: string,
   pagesLoaded: number,
   retryAfterSeconds?: number,
+  fallback?: SteamInventoryFallbackIssue,
 ): CoreResult {
   return {
     state,
@@ -337,8 +423,9 @@ function errorResult(
     truncated: false,
     pagesLoaded,
     fetchedAt,
-    error: inventoryError(state),
+    error: inventoryError(state, fallback),
     ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+    ...(fallback === undefined ? {} : { fallbackIssue: fallback }),
   };
 }
 
@@ -716,6 +803,7 @@ export function createSteamInventoryLoader(
             return {
               kind: "rate_limited",
               retryAfterSeconds: parseRetryAfter(response, now()),
+              fallbackIssue: fallbackIssue(response),
             } as const;
           }
           if (!response.ok) {
@@ -798,6 +886,9 @@ export function createSteamInventoryLoader(
           pagesLoaded,
           pageResult.kind === "rate_limited"
             ? pageResult.retryAfterSeconds
+            : undefined,
+          pageResult.kind === "rate_limited"
+            ? pageResult.fallbackIssue
             : undefined,
         );
       }
