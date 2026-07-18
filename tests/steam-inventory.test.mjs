@@ -59,6 +59,34 @@ test("Steam 429 switches once to the server-only SteamApis inventory fallback", 
   assert.equal(requested.length, 2);
 });
 
+test("SteamApis beta inventory accepts nested and direct response envelopes", async (t) => {
+  const inventory = {
+    assets: [{ appid: 730, contextid: "2", assetid: "301", classid: "401", instanceid: "0", amount: "1" }],
+    descriptions: [{
+      appid: 730, classid: "401", instanceid: "0", name: "Nested item",
+      market_hash_name: "Nested item", type: "Base Grade Container",
+      tradable: 1, marketable: 1,
+    }],
+  };
+  for (const [name, providerBody] of [
+    ["nested data inventory", { success: true, response: { data: { inventory } } }],
+    ["direct inventory", inventory],
+  ]) {
+    await t.test(name, async () => {
+      const loader = createSteamInventoryLoader({
+        maxRetries: 0,
+        fetchImpl: createResilientSteamInventoryFetch("configured-key", async (input) =>
+          new URL(input).origin === "https://steamcommunity.com"
+            ? new Response("rate limited", { status: 429 })
+            : jsonResponse(providerBody)),
+      });
+      const result = await loader.load(STEAM_ID);
+      assert.equal(result.state, "success");
+      assert.equal(result.items[0].assetId, "301");
+    });
+  }
+});
+
 test("Steam 429 is not retried repeatedly from the same server IP", async () => {
   let calls = 0;
   const loader = createSteamInventoryLoader({

@@ -235,6 +235,24 @@ function providerEnvelopeIssue(payload: Record<string, unknown>) {
   return "invalid_response";
 }
 
+function findProviderInventory(
+  payload: unknown,
+  depth = 0,
+): (Record<string, unknown> & { assets: unknown[]; descriptions: unknown[] }) | null {
+  if (!isRecord(payload) || depth > 4) return null;
+  if (Array.isArray(payload.assets) && Array.isArray(payload.descriptions)) {
+    return payload as Record<string, unknown> & {
+      assets: unknown[];
+      descriptions: unknown[];
+    };
+  }
+  for (const key of ["result", "response", "data", "inventory"]) {
+    const nested = findProviderInventory(payload[key], depth + 1);
+    if (nested) return nested;
+  }
+  return null;
+}
+
 export function createResilientSteamInventoryFetch(
   apiKey: string | null | undefined,
   fetchImpl: InventoryFetchLike = fetch,
@@ -293,18 +311,11 @@ export function createResilientSteamInventoryFetch(
       if (!isRecord(payload)) {
         return fallbackIssueResponse(primary, "invalid_response");
       }
-      if (payload.success !== true) {
+      const result = findProviderInventory(payload);
+      if (!result && payload.success === false) {
         return fallbackIssueResponse(primary, providerEnvelopeIssue(payload));
       }
-      const result = isRecord(payload.result)
-        ? payload.result
-        : isRecord(payload.response)
-          ? payload.response
-          : null;
       if (!result) return fallbackIssueResponse(primary, "invalid_response");
-      if (!Array.isArray(result.assets) || !Array.isArray(result.descriptions)) {
-        return fallbackIssueResponse(primary, "invalid_response");
-      }
       return Response.json({
         ...result,
         success: 1,
