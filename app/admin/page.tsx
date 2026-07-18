@@ -108,11 +108,10 @@ export default function AdminPage() {
   async function deleteDeal(id: string) { if (!confirm("Delete this recorded deal?")) return; const response = await fetch(`/api/admin/deals?id=${encodeURIComponent(id)}`, { method: "DELETE" }); if (response.ok) { flash("Deal deleted"); await load(); } }
   async function updateRequest(id: string, status: string) { const response = await fetch("/api/admin/trade-requests", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, status }) }); if (response.ok) { flash(`Request marked ${status}`); await load(); } }
   async function saveRequestPayment(id: string, paymentMethod: string, paymentDetails: string) {
-    setError("");
     const response = await fetch("/api/admin/trade-requests", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, paymentMethod, paymentDetails }) });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) { setError(body.error || "Could not save payout details"); return false; }
-    flash("Payout details saved"); await load(); return true;
+    if (!response.ok) return body.error || "Could not save payout details";
+    flash("Payout details saved"); await load(); return null;
   }
   async function logout() { await fetch("/api/auth/logout", { method: "POST" }); window.location.href = "/"; }
 
@@ -157,14 +156,33 @@ export default function AdminPage() {
 
 function DealsTable({ deals, onDelete }: { deals: Deal[]; onDelete: (id: string) => void }) { return <div className="adminDealTable"><div className="adminDealRow tableHead"><span>Client</span><span>Items</span><span>Date</span><span>Status</span><span>Amount</span><span /></div>{deals.length ? deals.map((deal) => <div className="adminDealRow" key={deal.id}><span><strong>{deal.display_name}</strong><small>@{deal.login}</small></span><span><strong>{deal.items || "Recorded transaction"}</strong><small>{deal.payment_method === "kaspi_card" ? `Kaspi Bank${deal.payment_details ? ` · ${deal.payment_details}` : ""}` : deal.note || "Manual entry"}</small></span><span>{new Date(deal.deal_date).toLocaleDateString("en-GB")}</span><span><b className={`statusTag ${deal.status}`}>{deal.status}</b></span><span className="dealAmount">{deal.currency} {(deal.amount_cents/100).toFixed(2)}</span><span><button className="deleteDeal" aria-label={`Delete deal ${deal.id}`} onClick={() => onDelete(deal.id)}>×</button></span></div>) : <div className="emptyAdmin"><span>◎</span><p>No deals recorded yet.</p></div>}</div>; }
 
-function RequestPaymentEditor({ request, onSave }: { request: TradeRequest; onSave: (id: string, paymentMethod: string, paymentDetails: string) => Promise<boolean> }) {
+function RequestPaymentEditor({ request, onSave }: { request: TradeRequest; onSave: (id: string, paymentMethod: string, paymentDetails: string) => Promise<string | null> }) {
   const [method, setMethod] = useState<string>(request.payment_method || "kaspi_card");
   const [details, setDetails] = useState(request.payment_details || "");
   const [saving, setSaving] = useState(false);
+  const [cardLoading, setCardLoading] = useState(false);
+  const [fullCardNumber, setFullCardNumber] = useState("");
+  const [localError, setLocalError] = useState("");
   async function save() {
-    setSaving(true);
-    try { await onSave(request.id, method, details); }
+    setSaving(true); setLocalError("");
+    try { setLocalError(await onSave(request.id, method, details) || ""); }
     finally { setSaving(false); }
   }
-  return <div className="adminPaymentEditor"><div><strong>Payout details</strong><small>Only recipient name, Kaspi phone, or last four card digits.</small></div><select aria-label={`Payment method for request ${request.id}`} value={method} onChange={(event) => setMethod(event.target.value)}><option value="kaspi_card">Card · Kaspi Bank</option><option value="">Not specified</option></select><input aria-label={`Payout reference for request ${request.id}`} maxLength={240} value={details} onChange={(event) => setDetails(event.target.value)} placeholder="Recipient, phone, or last 4 digits" /><button type="button" disabled={saving} onClick={save}>{saving ? "Saving…" : "Save details"}</button></div>;
+  async function loadFullCard() {
+    if (fullCardNumber) { setFullCardNumber(""); return; }
+    setCardLoading(true); setLocalError("");
+    const response = await fetch("/api/admin/payment-profile/reveal", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: request.user_id }) });
+    const body = await response.json().catch(() => ({}));
+    setCardLoading(false);
+    if (!response.ok) { setLocalError(body.error || "Could not load the saved card number"); return; }
+    setFullCardNumber(body.cardNumber || "");
+  }
+  return <div className="adminPaymentEditor">
+    <div><strong>Payout details</strong><small>Recipient name, Kaspi phone, or card reference.</small></div>
+    <select aria-label={`Payment method for request ${request.id}`} value={method} onChange={(event) => setMethod(event.target.value)}><option value="kaspi_card">Card · Kaspi Bank</option><option value="">Not specified</option></select>
+    <input aria-label={`Payout reference for request ${request.id}`} maxLength={240} value={details} onChange={(event) => setDetails(event.target.value)} placeholder="Recipient, phone, or card reference" />
+    <div className="adminPaymentActions"><button type="button" disabled={saving} onClick={save}>{saving ? "Saving…" : "Save details"}</button><button className="secondaryPaymentButton" type="button" disabled={cardLoading} onClick={loadFullCard}>{cardLoading ? "Loading…" : fullCardNumber ? "Hide card" : "Show full card"}</button></div>
+    {fullCardNumber && <output className="requestFullCard" aria-label={`Full card number for request ${request.id}`}>{fullCardNumber}</output>}
+    {localError && <small className="requestPaymentError" role="alert">{localError}</small>}
+  </div>;
 }

@@ -49,7 +49,7 @@ export function validatePaymentDetails(value: unknown): PaymentDetailsValidation
   if (possibleCardNumbers.some((candidate) => candidate.replace(/\D/g, "").length >= 13)) {
     return {
       ok: false,
-      error: "Do not enter a full card number; use a Kaspi phone or last four digits",
+      error: "Open the user's Payout profile to view or replace the complete card number",
     };
   }
   return { ok: true, value: normalized };

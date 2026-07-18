@@ -82,4 +82,12 @@ test("administrator payout editor loads the complete saved card into its editabl
   assert.match(adminPage, /Card number<input type="text"/);
   assert.doesNotMatch(adminPage, /Automatically hidden after 20 seconds/);
   assert.doesNotMatch(adminPage, /The number is encrypted and write-only after saving/);
+  assert.match(adminPage, /Show full card/);
+  assert.match(adminPage, /requestPaymentError/);
+  const requestSave = adminPage.slice(
+    adminPage.indexOf("async function saveRequestPayment"),
+    adminPage.indexOf("async function logout"),
+  );
+  assert.doesNotMatch(requestSave, /setError\(/);
+  assert.doesNotMatch(adminPage, /Admin action failed.<\/strong><span>\{error\}<\/span>.*Do not enter a full card number/s);
 });
