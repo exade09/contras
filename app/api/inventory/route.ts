@@ -1,20 +1,13 @@
 import { requireUser, routeError } from "@/lib/server/auth";
+import { configuredSteamInventoryLoader } from "@/lib/server/configured-steam-inventory";
 import {
-  createResilientSteamInventoryFetch,
-  createSteamInventoryLoader,
   type SteamCatalogMetadata,
   type SteamInventoryResult,
 } from "@/lib/server/steam-inventory";
 import { loadSkinCatalog } from "@/lib/server/skins";
-import { runtimeEnv } from "@/lib/server/storage";
 
 export const runtime = "nodejs";
 export const maxDuration = 45;
-
-const inventoryLoader = createSteamInventoryLoader({
-  fetchImpl: createResilientSteamInventoryFetch(runtimeEnv().STEAMAPIS_API_KEY),
-  timeoutMs: 30_000,
-});
 
 function inventoryJson(body: unknown, init?: ResponseInit) {
   const headers = new Headers(init?.headers);
@@ -128,10 +121,10 @@ export async function GET(request: Request) {
       url.searchParams.has("retry");
     const [catalog, result] = await Promise.all([
       exactCatalogIndex(),
-      inventoryLoader.load(user.steamId, { forceRefresh }),
+      configuredSteamInventoryLoader.load(user.steamId, { forceRefresh }),
     ]);
     const enriched = result.items.length
-      ? await inventoryLoader.load(user.steamId, { catalogIndex: catalog })
+      ? await configuredSteamInventoryLoader.load(user.steamId, { catalogIndex: catalog })
       : result;
     if (enriched.state !== "success" && enriched.state !== "empty") {
       return inventoryFailure(enriched);

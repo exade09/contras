@@ -6,7 +6,7 @@ import {
   type SaleItemSnapshot,
 } from "@/db/schema";
 import { requireUser, routeError } from "@/lib/server/auth";
-import { loadSteamInventory } from "@/lib/server/steam-inventory";
+import { configuredSteamInventoryLoader } from "@/lib/server/configured-steam-inventory";
 import { loadSkinCatalog, type CatalogSkin } from "@/lib/server/skins";
 import {
   groupTradeRequests,
@@ -21,6 +21,7 @@ import {
 import { cleanText, jsonError, sameOrigin } from "@/lib/server/storage";
 
 export const runtime = "nodejs";
+export const maxDuration = 45;
 
 async function requestsForUser(userId: string) {
   const db = getDb();
@@ -111,7 +112,7 @@ export async function POST(request: Request) {
     const note = cleanText(body.note, 600);
 
     const [inventory, catalogItems] = await Promise.all([
-      loadSteamInventory(user.steamId, { forceRefresh: true }),
+      configuredSteamInventoryLoader.load(user.steamId, { forceRefresh: true }),
       loadSkinCatalog().catch(() => [] as CatalogSkin[]),
     ]);
     if (inventory.state !== "success") {

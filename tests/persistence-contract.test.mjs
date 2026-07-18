@@ -15,7 +15,19 @@ test("PostgreSQL persistence enforces unique Steam identities, replay nonces, an
   assert.match(callbackRoute, /openIdResponseNonceHash: responseNonceHash/);
   assert.match(callbackRoute, /db\.transaction/);
   assert.match(tradeRoute, /selectVerifiedOwnedAssets/);
+  assert.match(tradeRoute, /configuredSteamInventoryLoader\.load\(user\.steamId, \{ forceRefresh: true \}\)/);
+  assert.doesNotMatch(tradeRoute, /\bloadSteamInventory\(/);
   assert.match(tradeRoute, /ownershipSource: "Steam Community Inventory"/);
+});
+
+test("inventory display and sale ownership verification share the resilient production loader", async () => {
+  const [inventoryRoute, configuredLoader] = await Promise.all([
+    readFile("app/api/inventory/route.ts", "utf8"),
+    readFile("lib/server/configured-steam-inventory.ts", "utf8"),
+  ]);
+  assert.match(inventoryRoute, /configuredSteamInventoryLoader\.load/);
+  assert.match(configuredLoader, /createResilientSteamInventoryFetch\(runtimeEnv\(\)\.STEAMAPIS_API_KEY\)/);
+  assert.match(configuredLoader, /createSteamInventoryLoader/);
 });
 
 test("legacy Steam IDs remain migration data and cannot authorize application sessions", async () => {
